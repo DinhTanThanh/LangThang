@@ -150,3 +150,187 @@ class PlaceFilterParams {
     return params;
   }
 }
+
+class CategoryDto {
+  final int id;
+  final int placeTypeId;
+  final String placeTypeName;
+  final String name;
+  final String? iconClass;
+  final int placeCount;
+
+  const CategoryDto({
+    required this.id,
+    this.placeTypeId = 0,
+    this.placeTypeName = '',
+    required this.name,
+    this.iconClass,
+    this.placeCount = 0,
+  });
+
+  factory CategoryDto.fromJson(Map<String, dynamic> json) {
+    return CategoryDto(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      placeTypeId: (json['placeTypeId'] as num?)?.toInt() ?? 0,
+      placeTypeName: json['placeTypeName']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      iconClass: json['iconClass']?.toString(),
+      placeCount: (json['placeCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'placeTypeId': placeTypeId,
+      'placeTypeName': placeTypeName,
+      'name': name,
+      'iconClass': iconClass,
+      'placeCount': placeCount,
+    };
+  }
+}
+
+class CollectionDto {
+  final int id;
+  final String title;
+  final String? description;
+  final bool isFeatured;
+  final int displayOrder;
+  final String? coverUrl;
+  final int placeCount;
+
+  const CollectionDto({
+    required this.id,
+    required this.title,
+    this.description,
+    this.isFeatured = true,
+    this.displayOrder = 0,
+    this.coverUrl,
+    this.placeCount = 0,
+  });
+
+  factory CollectionDto.fromJson(Map<String, dynamic> json) {
+    return CollectionDto(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString(),
+      isFeatured: json['isFeatured'] as bool? ?? true,
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
+      coverUrl: json['coverUrl']?.toString() ?? json['imageUrl']?.toString(),
+      placeCount: (json['placeCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'isFeatured': isFeatured,
+      'displayOrder': displayOrder,
+      'coverUrl': coverUrl,
+      'placeCount': placeCount,
+    };
+  }
+}
+
+class RegionDto {
+  final int id;
+  final String name;
+  final String? tagline;
+  final String? description;
+  final String? imageUrl;
+  final int orderIndex;
+  final int provinceCount;
+
+  const RegionDto({
+    required this.id,
+    required this.name,
+    this.tagline,
+    this.description,
+    this.imageUrl,
+    this.orderIndex = 0,
+    this.provinceCount = 0,
+  });
+
+  factory RegionDto.fromJson(Map<String, dynamic> json) {
+    return RegionDto(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: json['name']?.toString() ?? '',
+      tagline: json['tagline']?.toString(),
+      description: json['description']?.toString(),
+      imageUrl: json['imageUrl']?.toString(),
+      orderIndex: (json['orderIndex'] as num?)?.toInt() ?? 0,
+      provinceCount: (json['provinceCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'tagline': tagline,
+      'description': description,
+      'imageUrl': imageUrl,
+      'orderIndex': orderIndex,
+      'provinceCount': provinceCount,
+    };
+  }
+}
+
+class ProvinceDto {
+  final int id;
+  final int regionId;
+  final String regionName;
+  final String name;
+  final String? tagline;
+  final String? description;
+  final String? imageUrl;
+  final bool featured;
+  final int displayOrder;
+  final int placeCount;
+
+  const ProvinceDto({
+    required this.id,
+    required this.regionId,
+    required this.regionName,
+    required this.name,
+    this.tagline,
+    this.description,
+    this.imageUrl,
+    this.featured = false,
+    this.displayOrder = 0,
+    this.placeCount = 0,
+  });
+
+  factory ProvinceDto.fromJson(Map<String, dynamic> json) {
+    return ProvinceDto(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      regionId: (json['regionId'] as num?)?.toInt() ?? 0,
+      regionName: json['regionName']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      tagline: json['tagline']?.toString(),
+      description: json['description']?.toString(),
+      imageUrl: json['imageUrl']?.toString(),
+      featured: json['featured'] as bool? ?? false,
+      displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
+      placeCount: (json['placeCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'regionId': regionId,
+      'regionName': regionName,
+      'name': name,
+      'tagline': tagline,
+      'description': description,
+      'imageUrl': imageUrl,
+      'featured': featured,
+      'displayOrder': displayOrder,
+      'placeCount': placeCount,
+    };
+  }
+}

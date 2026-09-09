@@ -564,10 +564,9 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     child: TextField(
                       controller: _searchController,
                       focusNode: _searchFocusNode,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      smartDashesType: SmartDashesType.disabled,
-                      smartQuotesType: SmartQuotesType.disabled,
+                      keyboardType: TextInputType.text,
+                      autocorrect: true,
+                      enableSuggestions: true,
                       onSubmitted: (_) {
                         _searchFocusNode.unfocus();
                         _fetchPlaces();
@@ -960,9 +959,9 @@ class DestinationsScreenState extends State<DestinationsScreen> {
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              childAspectRatio: 0.58,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
+              childAspectRatio: 0.72,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
             ),
             delegate: SliverChildBuilderDelegate(
               (context, index) {
@@ -975,7 +974,14 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                       MaterialPageRoute(
                         builder: (context) => PlaceDetailScreen(place: place),
                       ),
-                    );
+                    ).then((_) {
+                      if (mounted) setState(() {});
+                    });
+                  },
+                  onToggleSave: (saved) {
+                    setState(() {
+                      _filteredPlaces[index] = place.copyWith(isSaved: saved);
+                    });
                   },
                 );
               },
@@ -1026,7 +1032,14 @@ class DestinationsScreenState extends State<DestinationsScreen> {
               MaterialPageRoute(
                 builder: (context) => PlaceDetailScreen(place: place),
               ),
-            );
+            ).then((_) {
+              if (mounted) setState(() {});
+            });
+          },
+          onToggleSave: (saved) {
+            setState(() {
+              _filteredPlaces[index] = place.copyWith(isSaved: saved);
+            });
           },
         );
       },

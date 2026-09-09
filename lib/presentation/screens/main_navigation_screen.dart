@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import 'home/home_screen.dart';
 import 'destinations/destinations_screen.dart';
+import 'destinations/travel_map_screen.dart';
 import 'food/food_screen.dart';
 import 'itineraries/itineraries_screen.dart';
+import 'blog/blog_screen.dart';
 import 'profile/profile_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -48,8 +50,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         onNavigateToSearch: _onNavigateToSearch,
       ),
       DestinationsScreen(key: _destinationsKey),
+      const TravelMapScreen(),
       const FoodScreen(),
       const ItinerariesScreen(),
+      const BlogScreen(),
       const ProfileScreen(),
     ];
 
@@ -79,8 +83,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           backgroundColor: Colors.white,
           selectedItemColor: AppColors.primary,
           unselectedItemColor: AppColors.textSecondary,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 11),
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 10),
           elevation: 0,
           items: const [
             BottomNavigationBarItem(
@@ -94,14 +98,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               label: 'Điểm đến',
             ),
             BottomNavigationBarItem(
+              icon: Icon(Icons.map_outlined),
+              activeIcon: Icon(Icons.map),
+              label: 'Bản đồ',
+            ),
+            BottomNavigationBarItem(
               icon: Icon(Icons.restaurant_outlined),
               activeIcon: Icon(Icons.restaurant),
               label: 'Ẩm thực',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.map_outlined),
-              activeIcon: Icon(Icons.map),
+              icon: Icon(Icons.route_outlined),
+              activeIcon: Icon(Icons.route),
               label: 'Lịch trình',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.menu_book_outlined),
+              activeIcon: Icon(Icons.menu_book),
+              label: 'Cẩm nang',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),

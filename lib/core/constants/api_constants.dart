@@ -4,10 +4,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 class ApiConstants {
   ApiConstants._();
 
-  /// Cho phép tùy chỉnh baseUrl (ví dụ: 'http://192.168.1.10:5000' khi test máy thật)
   static String? customBaseUrl;
 
-  /// Cổng backend phát triển (5000 / 5021 / 7027 / 7001)
   static int devPort = 5000;
 
   static String get baseUrl {
@@ -22,6 +20,7 @@ class ApiConstants {
     }
     return 'http://localhost:$devPort';
   }
+  static const String googleClientId = '166166336209-2qs73rtuhd9uvkt2lkuiaq1c472n1l7r.apps.googleusercontent.com';
   static const String login = '/api/auth/login';
   static const String register = '/api/auth/register';
   static const String googleLogin = '/api/auth/google';
