@@ -898,12 +898,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
-              Navigator.pop(context);
+              final nav = Navigator.of(context);
+              nav.pop();
               await AuthService().logout();
-              if (context.mounted) {
-                Navigator.pushReplacement(
-                  context,
+              if (mounted) {
+                setState(() {
+                  _user = null;
+                  _isLoggedIn = false;
+                });
+                nav.pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (route) => false,
                 );
               }
             },

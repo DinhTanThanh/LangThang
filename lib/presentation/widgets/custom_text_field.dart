@@ -48,11 +48,9 @@ class CustomTextField extends StatelessWidget {
           validator: validator,
           maxLines: maxLines,
           readOnly: readOnly,
-          autocorrect: false,
-          enableSuggestions: false,
+          autocorrect: !obscureText,
+          enableSuggestions: !obscureText,
           enableInteractiveSelection: true,
-          smartDashesType: SmartDashesType.disabled,
-          smartQuotesType: SmartQuotesType.disabled,
           style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: hintText,

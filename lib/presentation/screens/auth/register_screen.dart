@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/services/auth_service.dart';
 import '../../widgets/custom_text_field.dart';
@@ -21,6 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _agreeTerms = true;
   bool _isLoading = false;
+  bool _isGoogleLoading = false;
   bool _obscurePassword = true;
 
   @override
@@ -30,6 +34,79 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleGoogleRegister() async {
+    setState(() => _isGoogleLoading = true);
+    try {
+      final googleSignIn = GoogleSignIn(
+        clientId: kIsWeb ? ApiConstants.googleClientId : null,
+        scopes: const <String>[
+          'email',
+          'profile',
+        ],
+      );
+
+      try {
+        await googleSignIn.signOut();
+      } catch (_) {}
+
+      final account = await googleSignIn.signIn();
+      if (account == null) {
+        if (mounted) setState(() => _isGoogleLoading = false);
+        return;
+      }
+
+      final auth = await account.authentication;
+      final idToken = auth.idToken ?? auth.accessToken ?? 'google_auth_token_${account.id}';
+
+      final response = await _authService.loginWithGoogle(
+        idToken: idToken,
+        email: account.email,
+        displayName: account.displayName,
+        photoUrl: account.photoUrl,
+      );
+
+      if (mounted) {
+        setState(() => _isGoogleLoading = false);
+        if (response.success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Đăng nhập Google thành công! Chào mừng ${account.displayName ?? account.email}',
+              ),
+              backgroundColor: AppColors.primary,
+            ),
+          );
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
+            (route) => false,
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                response.message.isNotEmpty
+                    ? response.message
+                    : 'Đăng nhập Google thất bại. Vui lòng thử lại!',
+              ),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isGoogleLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi đăng nhập Google: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleRegister() async {
@@ -244,10 +321,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          icon: const Icon(Icons.g_mobiledata, size: 24, color: Colors.red),
-                          label: const Text(
-                            'Đăng ký với Google',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          icon: _isGoogleLoading
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                                )
+                              : const Icon(Icons.g_mobiledata, size: 24, color: Colors.red),
+                          label: Text(
+                            _isGoogleLoading ? 'Đang xác thực Google...' : 'Đăng ký với Google',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                           ),
                           style: OutlinedButton.styleFrom(
                             backgroundColor: Colors.white,
@@ -255,12 +338,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             side: const BorderSide(color: AppColors.border),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          onPressed: () {
-                            Navigator.pushReplacement(
-                              context,
-                              MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
-                            );
-                          },
+                          onPressed: (_isLoading || _isGoogleLoading) ? null : _handleGoogleRegister,
                         ),
                       ),
                       const SizedBox(height: 14),
