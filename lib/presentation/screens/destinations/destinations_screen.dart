@@ -14,6 +14,7 @@ enum ViewMode { grid, list }
 class DestinationsScreen extends StatefulWidget {
   final String? initialSearchQuery;
   final String? initialRegion;
+  final String? initialProvince;
   final String? initialCategory;
   final int? initialCategoryId;
 
@@ -21,6 +22,7 @@ class DestinationsScreen extends StatefulWidget {
     super.key,
     this.initialSearchQuery,
     this.initialRegion,
+    this.initialProvince,
     this.initialCategory,
     this.initialCategoryId,
   });
@@ -76,6 +78,9 @@ class DestinationsScreenState extends State<DestinationsScreen> {
     _filterCriteria = FilterCriteria(
       regions: widget.initialRegion != null && widget.initialRegion != 'Tất cả'
           ? [widget.initialRegion!]
+          : [],
+      provinces: widget.initialProvince != null && widget.initialProvince != 'Tất cả'
+          ? [widget.initialProvince!]
           : [],
       category: widget.initialCategory,
       categoryId: widget.initialCategoryId,

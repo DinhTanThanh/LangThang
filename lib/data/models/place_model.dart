@@ -81,6 +81,10 @@ class PlaceModel {
     this.longitude = 105.8542,
   });
 
+  String get imageUrl => img;
+  int get reviewCount => reviews;
+  String get address => location;
+
   PlaceModel copyWith({
     int? id,
     String? name,
@@ -281,6 +285,30 @@ class PlaceModel {
       mediaUrls = [img, ...mediaUrls];
     }
 
+    double lat = (json['latitude'] as num?)?.toDouble() ?? 0.0;
+    double lng = (json['longitude'] as num?)?.toDouble() ?? 0.0;
+
+    if ((lat == 0.0 || lng == 0.0) && json['coordinates'] is List) {
+      final coords = json['coordinates'] as List;
+      if (coords.length >= 2) {
+        final c0 = (coords[0] as num).toDouble();
+        final c1 = (coords[1] as num).toDouble();
+        // In GeoJSON standard: [longitude, latitude]
+        if (c0 > 50) {
+          lng = c0;
+          lat = c1;
+        } else {
+          lat = c0;
+          lng = c1;
+        }
+      }
+    }
+
+    if (lat == 0.0 && lng == 0.0) {
+      lat = 21.0285;
+      lng = 105.8542;
+    }
+
     return PlaceModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? '',
@@ -306,8 +334,8 @@ class PlaceModel {
       img: img,
       mediaUrls: mediaUrls,
       isSaved: json['isSaved'] as bool? ?? false,
-      latitude: (json['latitude'] as num?)?.toDouble() ?? 21.0285,
-      longitude: (json['longitude'] as num?)?.toDouble() ?? 105.8542,
+      latitude: lat,
+      longitude: lng,
     );
   }
 

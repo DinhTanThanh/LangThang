@@ -10,10 +10,16 @@ import 'map_directions_screen.dart';
 
 class TravelMapScreen extends StatefulWidget {
   final PlaceModel? initialPlace;
+  final String? initialSearchQuery;
+  final String? initialRegion;
+  final String? initialProvince;
 
   const TravelMapScreen({
     super.key,
     this.initialPlace,
+    this.initialSearchQuery,
+    this.initialRegion,
+    this.initialProvince,
   });
 
   @override
@@ -26,8 +32,10 @@ class _TravelMapScreenState extends State<TravelMapScreen>
   List<PlaceModel> _places = [];
   List<PlaceModel> _filteredPlaces = [];
   bool _loading = true;
+  bool _isFirstLoad = true;
   String _searchKeyword = '';
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
   int _selectedCategory = 0;
   String _selectedRegion = 'all';
@@ -66,9 +74,36 @@ class _TravelMapScreenState extends State<TravelMapScreen>
     {'id': 'south', 'label': 'Nam'},
   ];
 
+  String _normalizeVietnamese(String str) {
+    var result = str.toLowerCase();
+    result = result.replaceAll(RegExp(r'[àáạảãâầấậẩẫăằắặẳẵ]'), 'a');
+    result = result.replaceAll(RegExp(r'[èéẹẻẽêềếệểễ]'), 'e');
+    result = result.replaceAll(RegExp(r'[ìíịỉĩ]'), 'i');
+    result = result.replaceAll(RegExp(r'[òóọỏõôồốộổỗơờớợởỡ]'), 'o');
+    result = result.replaceAll(RegExp(r'[ùúụủũưừứựửữ]'), 'u');
+    result = result.replaceAll(RegExp(r'[ỳýỵỷỹ]'), 'y');
+    result = result.replaceAll(RegExp(r'[đ]'), 'd');
+    return result;
+  }
+
   @override
   void initState() {
     super.initState();
+    if (widget.initialSearchQuery != null && widget.initialSearchQuery!.isNotEmpty) {
+      _searchKeyword = widget.initialSearchQuery!;
+      _searchController.text = widget.initialSearchQuery!;
+    }
+    if (widget.initialRegion != null && widget.initialRegion!.isNotEmpty) {
+      final reg = widget.initialRegion!.toLowerCase();
+      if (reg.contains('bắc') || reg.contains('bac')) {
+        _selectedRegion = 'north';
+      } else if (reg.contains('trung')) {
+        _selectedRegion = 'central';
+      } else if (reg.contains('nam')) {
+        _selectedRegion = 'south';
+      }
+    }
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -81,18 +116,21 @@ class _TravelMapScreenState extends State<TravelMapScreen>
   void dispose() {
     _debounceTimer?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _pulseController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchMapPlaces() async {
+  Future<void> _fetchMapPlaces({bool autoFly = true}) async {
     setState(() => _loading = true);
 
     List<PlaceModel> loadedPlaces = [];
 
     try {
-      final response = await PlaceApiService().searchPlaces(
-        const PlaceFilterParams(page: 1, pageSize: 50),
+      final response = await PlaceApiService().getPlacesMap(
+        keyword: _searchKeyword.isNotEmpty ? _searchKeyword : null,
+        categoryId: _selectedCategory > 0 ? _selectedCategory : null,
+        region: _selectedRegion != 'all' ? _selectedRegion : null,
       );
       if (response.success && response.data != null && response.data!.isNotEmpty) {
         loadedPlaces = response.data!;
@@ -100,75 +138,104 @@ class _TravelMapScreenState extends State<TravelMapScreen>
     } catch (_) {}
 
     if (loadedPlaces.isEmpty) {
+      try {
+        final fallbackRes = await PlaceApiService().searchPlaces(
+          PlaceFilterParams(
+            keyword: _searchKeyword.isNotEmpty ? _searchKeyword : null,
+            categoryId: _selectedCategory > 0 ? _selectedCategory : null,
+            page: 1,
+            pageSize: 50,
+          ),
+        );
+        if (fallbackRes.success && fallbackRes.data != null && fallbackRes.data!.isNotEmpty) {
+          loadedPlaces = fallbackRes.data!;
+        }
+      } catch (_) {}
+    }
+
+    if (loadedPlaces.isEmpty) {
       loadedPlaces = List.from(MockData.places);
     }
 
-    if (widget.initialPlace != null) {
+    if (_isFirstLoad && widget.initialPlace != null) {
       final exists = loadedPlaces.any((p) => p.id == widget.initialPlace!.id);
       if (!exists) {
         loadedPlaces.insert(0, widget.initialPlace!);
       }
       _activePlace = widget.initialPlace;
-    } else if (loadedPlaces.isNotEmpty) {
-      _activePlace = loadedPlaces.first;
+      _isFirstLoad = false;
     }
 
     if (mounted) {
       setState(() {
         _places = loadedPlaces;
         _loading = false;
-        _applyFilters();
+        _applyFilters(autoFly: autoFly);
       });
     }
   }
 
-  void _applyFilters() {
+  void _applyFilters({bool autoFly = false}) {
     List<PlaceModel> result = List.from(_places);
 
-    // Search keyword
+    // Search keyword with intelligent Vietnamese normalization
     if (_searchKeyword.trim().isNotEmpty) {
-      final kw = _searchKeyword.trim().toLowerCase();
+      final rawKw = _searchKeyword.trim().toLowerCase();
+      final normKw = _normalizeVietnamese(rawKw);
+
       result = result.where((p) {
-        return p.name.toLowerCase().contains(kw) ||
-            p.location.toLowerCase().contains(kw) ||
-            p.province.toLowerCase().contains(kw) ||
-            p.category.toLowerCase().contains(kw);
+        final nameNorm = _normalizeVietnamese(p.name);
+        final locNorm = _normalizeVietnamese(p.location);
+        final provNorm = _normalizeVietnamese(p.province);
+        final catNorm = _normalizeVietnamese(p.category);
+        final regNorm = _normalizeVietnamese(p.region);
+        final descNorm = _normalizeVietnamese(p.desc);
+
+        return nameNorm.contains(normKw) ||
+            p.name.toLowerCase().contains(rawKw) ||
+            locNorm.contains(normKw) ||
+            p.location.toLowerCase().contains(rawKw) ||
+            provNorm.contains(normKw) ||
+            p.province.toLowerCase().contains(rawKw) ||
+            catNorm.contains(normKw) ||
+            regNorm.contains(normKw) ||
+            descNorm.contains(normKw);
       }).toList();
     }
 
     // Category filter
     if (_selectedCategory > 0) {
       result = result.where((p) {
-        final placeCat = p.category.toLowerCase();
-        final placeType = p.type.toLowerCase();
+        final placeCat = _normalizeVietnamese(p.category);
+        final placeType = _normalizeVietnamese(p.type);
         if (_selectedCategory == 1) {
-          return placeCat.contains('thắng cảnh') ||
-              placeCat.contains('thiên nhiên') ||
-              placeType.contains('du lịch');
+          return placeCat.contains('thang canh') ||
+              placeCat.contains('thien nhien') ||
+              placeType.contains('du lich');
         } else if (_selectedCategory == 2) {
-          return placeCat.contains('di tích') ||
-              placeCat.contains('lịch sử') ||
-              placeCat.contains('văn hóa') ||
-              placeCat.contains('chùa');
+          return placeCat.contains('di tich') ||
+              placeCat.contains('lich su') ||
+              placeCat.contains('van hoa') ||
+              placeCat.contains('chua');
         } else if (_selectedCategory == 3) {
-          return placeCat.contains('ẩm thực') ||
-              placeCat.contains('quán ăn') ||
-              placeCat.contains('nhà hàng') ||
-              placeCat.contains('bánh') ||
-              placeType.contains('ăn uống');
+          return placeCat.contains('am thuc') ||
+              placeCat.contains('quan an') ||
+              placeCat.contains('nha hang') ||
+              placeCat.contains('banh') ||
+              placeType.contains('an uong');
         } else if (_selectedCategory == 4) {
-          return placeCat.contains('bãi biển') ||
-              placeCat.contains('biển') ||
-              placeCat.contains('vịnh');
+          return placeCat.contains('bai bien') ||
+              placeCat.contains('bien') ||
+              placeCat.contains('vinh');
         } else if (_selectedCategory == 5) {
-          return placeCat.contains('cà phê') ||
+          return placeCat.contains('ca phe') ||
               placeCat.contains('cafe') ||
               placeCat.contains('coffee');
         } else if (_selectedCategory == 6) {
-          return placeCat.contains('vui chơi') ||
-              placeCat.contains('giải trí') ||
-              placeCat.contains('khu vui chơi') ||
-              placeType.contains('vui chơi');
+          return placeCat.contains('vui choi') ||
+              placeCat.contains('giai tri') ||
+              placeCat.contains('khu vui choi') ||
+              placeType.contains('vui choi');
         }
         return true;
       }).toList();
@@ -177,65 +244,60 @@ class _TravelMapScreenState extends State<TravelMapScreen>
     // Region filter
     if (_selectedRegion != 'all') {
       String regKeyword = '';
-      if (_selectedRegion == 'north') regKeyword = 'bắc';
+      if (_selectedRegion == 'north') regKeyword = 'bac';
       if (_selectedRegion == 'central') regKeyword = 'trung';
       if (_selectedRegion == 'south') regKeyword = 'nam';
 
       result = result.where((p) {
-        return p.region.toLowerCase().contains(regKeyword);
+        final rNorm = _normalizeVietnamese(p.region);
+        return rNorm.contains(regKeyword);
       }).toList();
     }
 
     setState(() {
       _filteredPlaces = result;
-      if (_activePlace != null &&
-          !_filteredPlaces.any((p) => p.id == _activePlace!.id) &&
-          _filteredPlaces.isNotEmpty) {
-        _activePlace = _filteredPlaces.first;
+      if (_filteredPlaces.isNotEmpty) {
+        if (_activePlace == null ||
+            !_filteredPlaces.any((p) => p.id == _activePlace!.id) ||
+            _searchKeyword.isNotEmpty) {
+          _activePlace = _filteredPlaces.first;
+        }
+      } else {
+        _activePlace = null;
       }
     });
+
+    if (autoFly && _activePlace != null && _activePlace!.latitude != 0.0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mapKey.currentState?.flyTo(
+          _activePlace!.latitude,
+          _activePlace!.longitude,
+          13.5,
+          600,
+        );
+      });
+    }
   }
 
   Future<void> _performSearch() async {
+    _isFirstLoad = false;
     final kw = _searchController.text.trim();
+    _searchFocusNode.unfocus();
     setState(() {
       _searchKeyword = kw;
     });
-    _applyFilters();
-
-    if (_filteredPlaces.isNotEmpty) {
-      _handleSelectPlace(_filteredPlaces.first);
-      return;
-    }
-
-    if (kw.isNotEmpty) {
-      try {
-        final res = await PlaceApiService().searchPlaces(
-          PlaceFilterParams(keyword: kw, page: 1, pageSize: 50),
-        );
-        if (res.success && res.data != null && res.data!.isNotEmpty && mounted) {
-          final newPlaces = res.data!;
-          final existingIds = _places.map((p) => p.id).toSet();
-          final uniqueNew = newPlaces.where((p) => !existingIds.contains(p.id)).toList();
-          setState(() {
-            _places.addAll(uniqueNew);
-            _applyFilters();
-          });
-          if (_filteredPlaces.isNotEmpty) {
-            _handleSelectPlace(_filteredPlaces.first);
-          }
-        }
-      } catch (_) {}
-    }
+    _applyFilters(autoFly: true);
+    _fetchMapPlaces(autoFly: true);
   }
 
   void _handleSelectPlace(PlaceModel place) {
+    _isFirstLoad = false;
     setState(() {
       _activePlace = place;
       _mobileView = 'map';
     });
     if (place.latitude != 0.0 && place.longitude != 0.0) {
-      _mapKey.currentState?.setCenter(place.latitude, place.longitude, 13.5);
+      _mapKey.currentState?.flyTo(place.latitude, place.longitude, 14.5, 550);
     }
   }
 
@@ -561,6 +623,7 @@ class _TravelMapScreenState extends State<TravelMapScreen>
                 Expanded(
                   child: TextField(
                     controller: _searchController,
+                    focusNode: _searchFocusNode,
                     keyboardType: TextInputType.text,
                     autocorrect: true,
                     enableSuggestions: true,
@@ -571,10 +634,12 @@ class _TravelMapScreenState extends State<TravelMapScreen>
                     },
                     onChanged: (val) {
                       _debounceTimer?.cancel();
-                      _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+                      _debounceTimer = Timer(const Duration(milliseconds: 300), () {
                         if (mounted) {
-                          _searchKeyword = val;
-                          _applyFilters();
+                          setState(() {
+                            _searchKeyword = val;
+                          });
+                          _applyFilters(autoFly: false);
                         }
                       });
                     },
@@ -605,9 +670,10 @@ class _TravelMapScreenState extends State<TravelMapScreen>
                   InkWell(
                     onTap: () {
                       _searchController.clear();
+                      _searchFocusNode.unfocus();
                       setState(() {
                         _searchKeyword = '';
-                        _applyFilters();
+                        _applyFilters(autoFly: false);
                       });
                     },
                     borderRadius: BorderRadius.circular(16),
@@ -619,6 +685,121 @@ class _TravelMapScreenState extends State<TravelMapScreen>
               ],
             ),
           ),
+          // Search Results Quick Suggestion Bar
+          if (_searchKeyword.trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            if (_filteredPlaces.isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF059669)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Tìm thấy ${_filteredPlaces.length} kết quả cho "${_searchKeyword.trim()}":',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF065F46),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              SizedBox(
+                height: 32,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: _filteredPlaces.length,
+                  itemBuilder: (context, index) {
+                    final p = _filteredPlaces[index];
+                    final isSel = _activePlace?.id == p.id;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: InkWell(
+                        onTap: () => _handleSelectPlace(p),
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isSel ? const Color(0xFF059669) : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSel ? const Color(0xFF059669) : const Color(0xFF6EE7B7),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 3,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.near_me_rounded,
+                                size: 11,
+                                color: isSel ? Colors.white : const Color(0xFF059669),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                p.name,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                  color: isSel ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                              if (p.province.isNotEmpty) ...[
+                                const SizedBox(width: 3),
+                                Text(
+                                  '(${p.province})',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: isSel ? FontWeight.w600 : FontWeight.normal,
+                                    color: isSel ? Colors.white70 : const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFECACA)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 13, color: Color(0xFFDC2626)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Không tìm thấy địa điểm nào khớp với "${_searchKeyword.trim()}"',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFFB91C1C),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+
           const SizedBox(height: 8),
 
           // Categories horizontal scroll (Matching MapSidebar.tsx)
@@ -634,8 +815,8 @@ class _TravelMapScreenState extends State<TravelMapScreen>
                       onTap: () {
                         setState(() {
                           _selectedCategory = cat['id'] as int;
-                          _applyFilters();
                         });
+                        _fetchMapPlaces();
                       },
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
@@ -695,64 +876,71 @@ class _TravelMapScreenState extends State<TravelMapScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Text(
-                    'Vùng miền: ',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
-                  ),
-                  const SizedBox(width: 4),
-                  for (final reg in _regions) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: InkWell(
-                        onTap: () {
-                          setState(() {
-                            _selectedRegion = reg['id']!;
-                            _applyFilters();
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _selectedRegion == reg['id']
-                                ? const Color(0xFFECFDF5)
-                                : Colors.white,
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Vùng miền: ',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF6B7280)),
+                      ),
+                      const SizedBox(width: 4),
+                      for (final reg in _regions) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: InkWell(
+                            onTap: () {
+                              setState(() {
+                                _selectedRegion = reg['id']!;
+                              });
+                              _fetchMapPlaces();
+                            },
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: _selectedRegion == reg['id']
-                                  ? const Color(0xFF6EE7B7)
-                                  : const Color(0xFFE5E7EB),
-                            ),
-                          ),
-                          child: Text(
-                            reg['label']!,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: _selectedRegion == reg['id']
-                                  ? FontWeight.w800
-                                  : FontWeight.w500,
-                              color: _selectedRegion == reg['id']
-                                  ? const Color(0xFF065F46)
-                                  : const Color(0xFF4B5563),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: _selectedRegion == reg['id']
+                                    ? const Color(0xFFECFDF5)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: _selectedRegion == reg['id']
+                                      ? const Color(0xFF6EE7B7)
+                                      : const Color(0xFFE5E7EB),
+                                ),
+                              ),
+                              child: Text(
+                                reg['label']!,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: _selectedRegion == reg['id']
+                                      ? FontWeight.w800
+                                      : FontWeight.w500,
+                                  color: _selectedRegion == reg['id']
+                                      ? const Color(0xFF065F46)
+                                      : const Color(0xFF4B5563),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
-                ],
+                      ],
+                    ],
+                  ),
+                ),
               ),
+              const SizedBox(width: 6),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.layers_outlined, size: 13, color: Color(0xFF059669)),
+                  const Icon(Icons.layers_outlined, size: 12, color: Color(0xFF059669)),
                   const SizedBox(width: 3),
                   Text(
-                    'Hiển thị: ${_filteredPlaces.length} địa điểm',
+                    '${_filteredPlaces.length} địa điểm',
                     style: const TextStyle(
-                      fontSize: 11,
+                      fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF059669),
                     ),
@@ -776,7 +964,7 @@ class _TravelMapScreenState extends State<TravelMapScreen>
         id: place.id.toString(),
         latitude: place.latitude,
         longitude: place.longitude,
-        alignmentOffset: const Offset(-0.5, -0.5),
+        alignmentOffset: const Offset(-0.5, -0.9),
         onTap: () => _handleSelectPlace(place),
         child: _buildShareLocationsMarker(place, isSelected),
       );

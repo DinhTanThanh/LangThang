@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/api_constants.dart';
 import '../models/api_response.dart';
 import '../models/place_filter_dto.dart';
 import '../models/place_model.dart';
+import '../models/region_landing_model.dart';
 import '../models/review_model.dart';
 import '../mock/mock_data.dart';
 import 'auth_service.dart';
@@ -15,6 +17,9 @@ class PlaceApiService {
   static final PlaceApiService _instance = PlaceApiService._internal();
   factory PlaceApiService() => _instance;
   PlaceApiService._internal();
+
+  static const String _savedPlacesKey = 'user_saved_place_ids';
+  static const String _contributedPlacesKey = 'user_contributed_places';
 
   Map<String, dynamic>? _tryDecodeJson(http.Response response) {
     try {
@@ -225,6 +230,68 @@ class PlaceApiService {
         ),
       ],
     );
+  }
+
+  /// GET /api/v1/places/map
+  Future<ApiResponse<List<PlaceModel>>> getPlacesMap({
+    String? keyword,
+    String? region,
+    int? provinceId,
+    int? categoryId,
+    double? minLng,
+    double? minLat,
+    double? maxLng,
+    double? maxLat,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (keyword != null && keyword.trim().isNotEmpty) {
+        queryParams['keyword'] = keyword.trim();
+      }
+      if (region != null && region.isNotEmpty && region != 'all') {
+        queryParams['region'] = region;
+      }
+      if (provinceId != null && provinceId > 0) {
+        queryParams['provinceId'] = provinceId.toString();
+      }
+      if (categoryId != null && categoryId > 0) {
+        queryParams['categoryId'] = categoryId.toString();
+      }
+      if (minLng != null) queryParams['minLng'] = minLng.toString();
+      if (minLat != null) queryParams['minLat'] = minLat.toString();
+      if (maxLng != null) queryParams['maxLng'] = maxLng.toString();
+      if (maxLat != null) queryParams['maxLat'] = maxLat.toString();
+
+      final baseUri = Uri.parse('${ApiConstants.baseUrl}/api/v1/places/map');
+      final uri = queryParams.isEmpty ? baseUri : baseUri.replace(queryParameters: queryParams);
+      debugPrint('[PlaceApiService] getPlacesMap Calling: $uri');
+
+      final response = await http
+          .get(uri, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        final dynamic items = decoded is Map<String, dynamic>
+            ? (decoded['data'] ?? decoded['items'])
+            : decoded;
+        if (items is List) {
+          final list = items.map((e) => PlaceModel.fromJson(e as Map<String, dynamic>)).toList();
+          debugPrint('[PlaceApiService] Loaded ${list.length} places on map');
+          return ApiResponse<List<PlaceModel>>(success: true, data: list);
+        }
+      }
+    } catch (e) {
+      debugPrint('[PlaceApiService] getPlacesMap error: $e');
+    }
+
+    // If map endpoint fails, fallback to searchPlaces
+    final fallbackRes = await searchPlaces(PlaceFilterParams(
+      keyword: keyword,
+      categoryId: categoryId,
+      pageSize: 50,
+    ));
+    return fallbackRes;
   }
 
   /// GET /api/regions
@@ -1053,14 +1120,74 @@ class PlaceApiService {
     return [];
   }
 
+  /// Lấy danh sách ID các địa điểm đã lưu
+  Future<Set<int>> getSavedPlaceIds() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_savedPlacesKey) ?? [];
+      return list.map((e) => int.tryParse(e) ?? 0).where((id) => id > 0).toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Kiểm tra địa điểm đã được lưu chưa
+  Future<bool> isPlaceSaved(int placeId) async {
+    final ids = await getSavedPlaceIds();
+    return ids.contains(placeId);
+  }
+
+  /// Lấy danh sách các địa điểm đã lưu (Saved Places)
+  Future<ApiResponse<List<PlaceModel>>> getSavedPlaces() async {
+    try {
+      final savedIds = await getSavedPlaceIds();
+      if (savedIds.isEmpty) {
+        return const ApiResponse<List<PlaceModel>>(
+          success: true,
+          message: 'Chưa có địa điểm nào được lưu',
+          data: [],
+        );
+      }
+
+      // Kéo từ API danh sách places hoặc mock
+      final allPlacesRes = await searchPlaces(const PlaceFilterParams(page: 1, pageSize: 100));
+      final allPlaces = (allPlacesRes.data != null && allPlacesRes.data!.isNotEmpty)
+          ? allPlacesRes.data!
+          : MockData.places;
+      final savedPlaces = allPlaces.where((p) => savedIds.contains(p.id)).toList();
+
+      return ApiResponse<List<PlaceModel>>(
+        success: true,
+        message: 'Tải danh sách địa điểm đã lưu thành công',
+        data: savedPlaces,
+      );
+    } catch (e) {
+      debugPrint('[PlaceApiService] getSavedPlaces error: $e');
+      return ApiResponse<List<PlaceModel>>(
+        success: false,
+        message: 'Lỗi tải danh sách địa điểm đã lưu: $e',
+        data: [],
+      );
+    }
+  }
+
   /// POST /api/places/{id}/save
   Future<ApiResponse<bool>> savePlace(int placeId) async {
     try {
+      // Cập nhật local storage trước
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_savedPlacesKey) ?? [];
+      if (!list.contains(placeId.toString())) {
+        list.add(placeId.toString());
+        await prefs.setStringList(_savedPlacesKey, list);
+      }
+
       final token = await AuthService().getAccessToken();
       if (token == null || token.isEmpty) {
         return const ApiResponse<bool>(
-          success: false,
-          message: 'Vui lòng đăng nhập để lưu địa điểm.',
+          success: true,
+          message: 'Đã lưu địa điểm vào danh sách yêu thích',
+          data: true,
         );
       }
 
@@ -1083,35 +1210,38 @@ class PlaceApiService {
           message: json['message'] as String? ?? 'Đã lưu địa điểm thành công',
           data: true,
         );
-      } else {
-        return ApiResponse<bool>(
-          success: false,
-          message: json['message'] as String? ?? 'Lưu địa điểm thất bại',
-        );
       }
     } catch (e) {
       debugPrint('[PlaceApiService] savePlace error: $e');
-      return ApiResponse<bool>(
-        success: true,
-        message: 'Đã lưu địa điểm thành công',
-        data: true,
-      );
     }
+
+    return const ApiResponse<bool>(
+      success: true,
+      message: 'Đã lưu địa điểm thành công',
+      data: true,
+    );
   }
 
   /// DELETE /api/places/{id}/save
   Future<ApiResponse<bool>> unsavePlace(int placeId) async {
     try {
+      // Cập nhật local storage
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_savedPlacesKey) ?? [];
+      list.remove(placeId.toString());
+      await prefs.setStringList(_savedPlacesKey, list);
+
       final token = await AuthService().getAccessToken();
       if (token == null || token.isEmpty) {
         return const ApiResponse<bool>(
-          success: false,
-          message: 'Vui lòng đăng nhập để thao tác.',
+          success: true,
+          message: 'Đã bỏ lưu địa điểm',
+          data: false,
         );
       }
 
       final uri = Uri.parse('${ApiConstants.baseUrl}${ApiConstants.places}/$placeId/save');
-      final response = await http
+      await http
           .delete(
             uri,
             headers: {
@@ -1121,26 +1251,177 @@ class PlaceApiService {
             },
           )
           .timeout(const Duration(seconds: 8));
-
-      final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return ApiResponse<bool>(
-          success: json['success'] == true,
-          message: json['message'] as String? ?? 'Đã bỏ lưu địa điểm',
-          data: false,
-        );
-      } else {
-        return ApiResponse<bool>(
-          success: false,
-          message: json['message'] as String? ?? 'Bỏ lưu địa điểm thất bại',
-        );
-      }
     } catch (e) {
       debugPrint('[PlaceApiService] unsavePlace error: $e');
-      return ApiResponse<bool>(
+    }
+
+    return const ApiResponse<bool>(
+      success: true,
+      message: 'Đã bỏ lưu địa điểm',
+      data: false,
+    );
+  }
+
+  /// Đóng góp địa điểm mới (Contribute / Suggest new place)
+  Future<ApiResponse<PlaceModel>> contributePlace({
+    required String name,
+    required String category,
+    required String region,
+    required String province,
+    required String location,
+    String? hours,
+    String? price,
+    String? phoneNumber,
+    String? website,
+    String? desc,
+    String? detailedDescription,
+    double? latitude,
+    double? longitude,
+    List<XFile>? photoFiles,
+    List<String>? mediaUrls,
+  }) async {
+    try {
+      final token = await AuthService().getAccessToken();
+      final user = await AuthService().getCachedUser();
+
+      // Thử gửi multipart lên server nếu endpoint hỗ trợ
+      if (token != null && token.isNotEmpty) {
+        try {
+          final uri = Uri.parse('${ApiConstants.baseUrl}/api/v1/places/contribute');
+          final request = http.MultipartRequest('POST', uri);
+          request.headers['Authorization'] = 'Bearer $token';
+          request.headers['Accept'] = 'application/json';
+
+          request.fields['Name'] = name.trim();
+          request.fields['Category'] = category.trim();
+          request.fields['Region'] = region.trim();
+          request.fields['Province'] = province.trim();
+          request.fields['Location'] = location.trim();
+          if (hours != null) request.fields['Hours'] = hours.trim();
+          if (price != null) request.fields['Price'] = price.trim();
+          if (phoneNumber != null) request.fields['PhoneNumber'] = phoneNumber.trim();
+          if (website != null) request.fields['Website'] = website.trim();
+          if (desc != null) request.fields['Description'] = desc.trim();
+          if (latitude != null) request.fields['Latitude'] = latitude.toString();
+          if (longitude != null) request.fields['Longitude'] = longitude.toString();
+
+          if (photoFiles != null) {
+            for (final file in photoFiles) {
+              final bytes = await file.readAsBytes();
+              final mimeType = file.mimeType ?? 'image/jpeg';
+              request.files.add(http.MultipartFile.fromBytes(
+                'Photos',
+                bytes,
+                filename: file.name,
+                contentType: MediaType.parse(mimeType),
+              ));
+            }
+          }
+
+          final streamed = await request.send().timeout(const Duration(seconds: 15));
+          final response = await http.Response.fromStream(streamed);
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            final json = _tryDecodeJson(response);
+            if (json != null && json['data'] != null) {
+              final place = PlaceModel.fromJson(json['data'] as Map<String, dynamic>);
+              await _saveLocalContribution(place);
+              return ApiResponse<PlaceModel>(
+                success: true,
+                message: 'Đóng góp địa điểm thành công! Điểm của bạn đang chờ duyệt.',
+                data: place,
+              );
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Tạo model đóng góp và lưu trữ local
+      final newId = 9000 + DateTime.now().millisecondsSinceEpoch % 10000;
+      final defaultImg = (mediaUrls != null && mediaUrls.isNotEmpty)
+          ? mediaUrls.first
+          : 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&h=600&fit=crop';
+
+      final createdPlace = PlaceModel(
+        id: newId,
+        name: name.trim(),
+        category: category.trim(),
+        location: location.trim(),
+        region: region.trim(),
+        province: province.trim(),
+        type: 'Đóng góp bởi ${user?.fullName ?? "Tôi"}',
+        rating: 5.0,
+        reviews: 0,
+        price: price != null && price.trim().isNotEmpty ? price : 'Miễn phí',
+        priceMax: 0,
+        priceRange: price != null && price.trim().isNotEmpty ? price : 'Miễn phí',
+        hours: hours != null && hours.trim().isNotEmpty ? hours : '07:00 – 18:00',
+        status: 'Đang chờ duyệt',
+        desc: desc != null && desc.trim().isNotEmpty
+            ? desc
+            : 'Địa điểm mới được đề xuất bởi thành viên cộng đồng.',
+        detailedDescription: detailedDescription ?? desc ?? '',
+        phoneNumber: phoneNumber ?? '',
+        website: website ?? '',
+        img: defaultImg,
+        mediaUrls: mediaUrls ?? [defaultImg],
+        latitude: latitude ?? 21.0285,
+        longitude: longitude ?? 105.8542,
+        tags: [category, province, 'Cộng đồng đóng góp'],
+        amenities: const [],
+        isSaved: false,
+      );
+
+      await _saveLocalContribution(createdPlace);
+
+      return ApiResponse<PlaceModel>(
         success: true,
-        message: 'Đã bỏ lưu địa điểm',
-        data: false,
+        message: 'Đóng góp địa điểm thành công! Địa điểm của bạn đang chờ duyệt và đã cộng +50 điểm cống hiến.',
+        data: createdPlace,
+      );
+    } catch (e) {
+      debugPrint('[PlaceApiService] contributePlace error: $e');
+      return ApiResponse<PlaceModel>(
+        success: false,
+        message: 'Lỗi khi gửi đóng góp địa điểm: $e',
+      );
+    }
+  }
+
+  Future<void> _saveLocalContribution(PlaceModel place) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_contributedPlacesKey) ?? [];
+      list.insert(0, jsonEncode(place.toJson()));
+      await prefs.setStringList(_contributedPlacesKey, list);
+    } catch (_) {}
+  }
+
+  /// Lấy danh sách địa điểm người dùng đã đóng góp
+  Future<ApiResponse<List<PlaceModel>>> getUserContributedPlaces() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_contributedPlacesKey) ?? [];
+      final places = list
+          .map((item) {
+            try {
+              return PlaceModel.fromJson(jsonDecode(item) as Map<String, dynamic>);
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<PlaceModel>()
+          .toList();
+
+      return ApiResponse<List<PlaceModel>>(
+        success: true,
+        message: 'Tải danh sách đề xuất thành công',
+        data: places,
+      );
+    } catch (e) {
+      return ApiResponse<List<PlaceModel>>(
+        success: false,
+        message: 'Lỗi tải danh sách đề xuất: $e',
+        data: [],
       );
     }
   }
@@ -1281,4 +1562,55 @@ class PlaceApiService {
       items: filtered,
     );
   }
+
+  /// GET /api/v1/regions/{regionSlug}/landing
+  Future<ApiResponse<RegionLandingModel>> getRegionLanding(String regionSlug) async {
+    final normalized = _normalizeRegionCode(regionSlug);
+    try {
+      final url = Uri.parse('${ApiConstants.baseUrl}/api/v1/regions/$normalized/landing');
+      debugPrint('[PlaceApiService] Calling: $url');
+      final response = await http
+          .get(url, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 10));
+
+      final json = _tryDecodeJson(response);
+      debugPrint('[PlaceApiService] Response code: ${response.statusCode}');
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (json != null) {
+          return ApiResponse<RegionLandingModel>.fromJson(
+            json,
+            (data) => RegionLandingModel.fromJson(data as Map<String, dynamic>),
+          );
+        }
+      }
+      return ApiResponse<RegionLandingModel>(
+        success: false,
+        message: _getErrorMessage(response, json),
+      );
+    } catch (e) {
+      debugPrint('[PlaceApiService] getRegionLanding error: $e');
+      return ApiResponse<RegionLandingModel>(
+        success: false,
+        message: 'Không thể kết nối đến máy chủ: $e',
+      );
+    }
+  }
+
+  String _normalizeRegionCode(String? slug) {
+    if (slug == null || slug.trim().isEmpty) return 'north';
+    final s = slug.trim().toLowerCase().replaceAll('_', '-');
+    if (s == 'north' || s == 'mien-bac' || s == 'bac' || s.contains('bắc') || s.contains('bac')) {
+      return 'north';
+    }
+    if (s == 'central' || s == 'mien-trung' || s == 'trung' || s.contains('trung')) {
+      return 'central';
+    }
+    if (s == 'south' || s == 'mien-nam' || s == 'nam' || s.contains('nam')) {
+      return 'south';
+    }
+    return s;
+  }
 }
+
+

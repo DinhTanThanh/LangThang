@@ -21,8 +21,31 @@ class TravelApiService {
 
   /// Lấy danh sách toàn bộ điểm đến hoặc lọc theo vùng miền
   Future<List<DestinationModel>> getDestinations({Region? region}) async {
-    // Giả lập độ trễ mạng nhẹ (mô phỏng gọi API thực tế)
-    await Future.delayed(const Duration(milliseconds: 200));
+    try {
+      final res = await PlaceApiService().searchPlaces(const PlaceFilterParams(pageSize: 50));
+      if (res.success && res.data != null && res.data!.isNotEmpty) {
+        final places = res.data!;
+        final list = places.map((p) => DestinationModel(
+          id: p.id.toString(),
+          title: p.name,
+          location: p.location,
+          region: p.region.toLowerCase().contains('bắc')
+              ? Region.north
+              : (p.region.toLowerCase().contains('trung') ? Region.central : Region.south),
+          rating: p.rating,
+          reviewCount: p.reviews,
+          imageUrl: p.img,
+          badgeText: p.category,
+          description: p.desc,
+          tags: p.tags,
+        )).toList();
+
+        if (region == null) {
+          return list;
+        }
+        return list.where((d) => d.region == region).toList();
+      }
+    } catch (_) {}
 
     if (region == null) {
       return MockData.destinations;
@@ -32,7 +55,27 @@ class TravelApiService {
 
   /// Lấy chi tiết một điểm đến theo ID
   Future<DestinationModel?> getDestinationById(String id) async {
-    await Future.delayed(const Duration(milliseconds: 150));
+    final numId = int.tryParse(id);
+    if (numId != null) {
+      final res = await PlaceApiService().getPlaceDetail(numId);
+      if (res.success && res.data != null) {
+        final p = res.data!;
+        return DestinationModel(
+          id: p.id.toString(),
+          title: p.name,
+          location: p.location,
+          region: p.region.toLowerCase().contains('bắc')
+              ? Region.north
+              : (p.region.toLowerCase().contains('trung') ? Region.central : Region.south),
+          rating: p.rating,
+          reviewCount: p.reviews,
+          imageUrl: p.img,
+          badgeText: p.category,
+          description: p.desc,
+          tags: p.tags,
+        );
+      }
+    }
     try {
       return MockData.destinations.firstWhere((d) => d.id == id);
     } catch (_) {
@@ -40,10 +83,78 @@ class TravelApiService {
     }
   }
 
-  /// Lấy danh sách ẩm thực địa phương
-  Future<List<FoodModel>> getFoods() async {
-    await Future.delayed(const Duration(milliseconds: 200));
-    return MockData.foods;
+  /// Lấy danh sách ẩm thực địa phương (theo vùng miền, tỉnh hoặc từ khóa)
+  Future<List<FoodModel>> getFoods({
+    String? region,
+    String? province,
+    String? keyword,
+  }) async {
+    try {
+      final queryParams = <String, String>{};
+      if (region != null && region.isNotEmpty && region != 'all') {
+        queryParams['region'] = region;
+      }
+      if (province != null && province.isNotEmpty && province != 'all') {
+        queryParams['province'] = province;
+      }
+      if (keyword != null && keyword.trim().isNotEmpty) {
+        queryParams['keyword'] = keyword.trim();
+      }
+
+      final baseUri = Uri.parse('${ApiConstants.baseUrl}/api/v1/foods');
+      final uri = queryParams.isEmpty ? baseUri : baseUri.replace(queryParameters: queryParams);
+
+      final token = await AuthService().getAccessToken();
+      final headers = <String, String>{'Accept': 'application/json'};
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+
+      final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        final dynamic items = decoded is Map<String, dynamic> ? (decoded['data'] ?? decoded['items']) : decoded;
+        if (items is List && items.isNotEmpty) {
+          return items.map((e) => FoodModel.fromJson(e as Map<String, dynamic>)).toList();
+        }
+      }
+    } catch (_) {}
+
+    // Fallback: Local filtering on MockData.foods
+    List<FoodModel> list = List.from(MockData.foods);
+
+    if (region != null && region.isNotEmpty && region != 'all') {
+      final reg = region.toLowerCase();
+      list = list.where((f) {
+        if (reg == 'north' || reg.contains('bắc')) {
+          return f.region == 'north' || f.province.contains('Hà Nội') || f.province.contains('Hải Phòng') || f.province.contains('Ninh Bình') || f.province.contains('Lào Cai') || f.province.contains('Sa Pa');
+        }
+        if (reg == 'central' || reg.contains('trung')) {
+          return f.region == 'central' || f.province.contains('Huế') || f.province.contains('Đà Nẵng') || f.province.contains('Hội An') || f.province.contains('Quảng Nam') || f.province.contains('Nha Trang') || f.province.contains('Khánh Hòa') || f.province.contains('Lâm Đồng') || f.province.contains('Đà Lạt');
+        }
+        if (reg == 'south' || reg.contains('nam')) {
+          return f.region == 'south' || f.province.contains('Hồ Chí Minh') || f.province.contains('Sài Gòn') || f.province.contains('Cần Thơ') || f.province.contains('Kiên Giang') || f.province.contains('Phú Quốc') || f.province.contains('An Giang');
+        }
+        return f.region.toLowerCase() == reg || f.province.toLowerCase().contains(reg);
+      }).toList();
+    }
+
+    if (province != null && province.isNotEmpty && province != 'all') {
+      final prov = province.toLowerCase();
+      list = list.where((f) => f.province.toLowerCase().contains(prov) || f.address.toLowerCase().contains(prov)).toList();
+    }
+
+    if (keyword != null && keyword.trim().isNotEmpty) {
+      final q = keyword.trim().toLowerCase();
+      list = list.where((f) {
+        return f.name.toLowerCase().contains(q) ||
+            f.description.toLowerCase().contains(q) ||
+            f.province.toLowerCase().contains(q) ||
+            f.suggestedPlaces.any((p) => p.name.toLowerCase().contains(q) || p.address.toLowerCase().contains(q));
+      }).toList();
+    }
+
+    return list;
   }
 
   /// Lấy danh sách lịch trình gợi ý (Gọi API hoặc Fallback)
@@ -139,8 +250,41 @@ class TravelApiService {
   }
 
   /// Lấy danh sách bài viết blog
-  Future<List<BlogModel>> getBlogs() async {
-    await Future.delayed(const Duration(milliseconds: 200));
+  Future<List<BlogModel>> getBlogs({
+    String? category,
+    String? keyword,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    try {
+      final queryParams = <String, String>{
+        'Page': page.toString(),
+        'PageSize': pageSize.toString(),
+      };
+      if (category != null && category.isNotEmpty && category != 'all') {
+        queryParams['Category'] = category;
+      }
+      if (keyword != null && keyword.trim().isNotEmpty) {
+        queryParams['Keyword'] = keyword.trim();
+      }
+
+      final baseUri = Uri.parse('${ApiConstants.baseUrl}/api/v1/blogs');
+      final uri = baseUri.replace(queryParameters: queryParams);
+      final response = await http
+          .get(uri, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 6));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        final dynamic items = decoded is Map<String, dynamic>
+            ? (decoded['data'] ?? decoded['items'])
+            : decoded;
+        if (items is List && items.isNotEmpty) {
+          return items.map((e) => BlogModel.fromJson(e as Map<String, dynamic>)).toList();
+        }
+      }
+    } catch (_) {}
+
     return MockData.blogs;
   }
 

@@ -5,6 +5,7 @@ import '../../../data/models/place_filter_dto.dart';
 import '../../../data/models/review_model.dart';
 import '../../../data/services/place_api_service.dart';
 import '../../../data/services/auth_service.dart';
+import '../../widgets/mapbox_interactive_map.dart';
 import '../../widgets/review/place_detail_reviews_section.dart';
 import '../auth/login_screen.dart';
 import '../itineraries/itineraries_screen.dart';
@@ -29,11 +30,8 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   late int _currentReviewCount;
   PlaceReviewSummaryModel? _reviewSummary;
 
-  // Mapbox Configuration
-  static const String _mapboxToken =
-      'pk.eyJ1IjoiZGluaHRhbnRoYW5oMTkiLCJhIjoiY210bnNsZ2V2MG14NzJ5cHN1ZjhzMjU3MiJ9.qM8oAp0Hb9ThJlBzvn0Qtw';
-  double _mapZoom = 14.5;
-  static const String _mapStyleId = 'mapbox/streets-v12';
+  final GlobalKey<MapboxInteractiveMapState> _miniMapKey =
+      GlobalKey<MapboxInteractiveMapState>();
 
   List<String> _galleryImages = [];
 
@@ -722,8 +720,6 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
     final lat = place.latitude != 0.0 ? place.latitude : 21.0285;
     final lng = place.longitude != 0.0 ? place.longitude : 105.8542;
-    final mapboxUrl =
-        'https://api.mapbox.com/styles/v1/$_mapStyleId/static/pin-l+059669($lng,$lat)/$lng,$lat,${_mapZoom.toStringAsFixed(1)},0/600x300@2x?access_token=$_mapboxToken';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -925,60 +921,86 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
           ),
           const SizedBox(height: 10),
 
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => TravelMapScreen(
-                    initialPlace: place,
+          // Mini Interactive Map with Pin and Smooth Zoom
+          Container(
+            height: 190,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Interactive Vector Tile Map
+                MapboxInteractiveMap(
+                  key: _miniMapKey,
+                  initialLat: lat,
+                  initialLng: lng,
+                  initialZoom: 14.5,
+                  customMarkers: [
+                    _buildMiniMapMarker(place, lat, lng),
+                  ],
+                ),
+
+                // Mapbox Brand Badge
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.public, size: 11, color: Color(0xFF059669)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Mapbox',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF111827),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              );
-            },
-            child: Container(
-              height: 170,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    mapboxUrl,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        color: const Color(0xFFF3F4F6),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Color(0xFF059669),
+
+                // Tap to Expand Fullscreen button
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => TravelMapScreen(
+                            initialPlace: place,
                           ),
                         ),
                       );
                     },
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      color: const Color(0xFFF3F4F6),
-                      child: const Center(
-                        child: Icon(Icons.map_outlined, color: Color(0xFF9CA3AF), size: 32),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: 8,
-                    left: 8,
+                    borderRadius: BorderRadius.circular(6),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.95),
+                        color: const Color(0xFF111827).withValues(alpha: 0.85),
                         borderRadius: BorderRadius.circular(6),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08),
+                            color: Colors.black.withValues(alpha: 0.2),
                             blurRadius: 4,
                           ),
                         ],
@@ -986,36 +1008,10 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: const [
-                          Icon(Icons.public, size: 11, color: Color(0xFF059669)),
-                          SizedBox(width: 4),
-                          Text(
-                            'Mapbox',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF111827),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.75),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
                           Icon(Icons.open_in_full, size: 11, color: Colors.white),
                           SizedBox(width: 4),
                           Text(
-                            'Chạm để mở rộng',
+                            'Xem toàn màn hình',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
@@ -1026,52 +1022,60 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                       ),
                     ),
                   ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.95),
-                        borderRadius: BorderRadius.circular(6),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 4,
+                ),
+
+                // Smooth Map Controls (Zoom In, Zoom Out, Recenter Pin)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Zoom In
+                        InkWell(
+                          onTap: () => _miniMapKey.currentState?.zoomIn(),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                          child: const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: Icon(Icons.add, size: 16, color: Color(0xFF111827)),
                           ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          InkWell(
-                            onTap: () {
-                              if (_mapZoom < 17.5) {
-                                setState(() => _mapZoom += 1.0);
-                              }
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.add, size: 14, color: Color(0xFF111827)),
-                            ),
+                        ),
+                        Container(height: 1, width: 18, color: const Color(0xFFE5E7EB)),
+                        // Zoom Out
+                        InkWell(
+                          onTap: () => _miniMapKey.currentState?.zoomOut(),
+                          child: const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: Icon(Icons.remove, size: 16, color: Color(0xFF111827)),
                           ),
-                          Container(height: 1, width: 16, color: const Color(0xFFE5E7EB)),
-                          InkWell(
-                            onTap: () {
-                              if (_mapZoom > 11.5) {
-                                setState(() => _mapZoom -= 1.0);
-                              }
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.remove, size: 14, color: Color(0xFF111827)),
-                            ),
+                        ),
+                        Container(height: 1, width: 18, color: const Color(0xFFE5E7EB)),
+                        // Recenter Pin
+                        InkWell(
+                          onTap: () => _miniMapKey.currentState?.flyTo(lat, lng, 14.5),
+                          borderRadius: const BorderRadius.vertical(bottom: Radius.circular(6)),
+                          child: const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: Icon(Icons.my_location, size: 14, color: Color(0xFF059669)),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
@@ -1148,6 +1152,106 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 elevation: 0,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  MapboxCustomMarker _buildMiniMapMarker(PlaceModel place, double lat, double lng) {
+    return MapboxCustomMarker(
+      id: place.id.toString(),
+      latitude: lat,
+      longitude: lng,
+      alignmentOffset: const Offset(-0.5, -0.9),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => TravelMapScreen(
+              initialPlace: place,
+            ),
+          ),
+        );
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Selected / Focused Place Label Badge
+          Container(
+            margin: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+            decoration: BoxDecoration(
+              color: const Color(0xFF111827),
+              borderRadius: BorderRadius.circular(6),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    place.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (place.rating > 0) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.star_rounded, size: 12, color: Color(0xFFF59E0B)),
+                  Text(
+                    place.rating.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          // Emerald Map Marker Pin
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: const Color(0xFF059669),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white,
+                width: 2.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF059669).withValues(alpha: 0.4),
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.location_on,
+              size: 17,
+              color: Colors.white,
             ),
           ),
         ],

@@ -1,3 +1,5 @@
+import 'place_model.dart';
+
 class LookupItemDto {
   final int id;
   final String name;
@@ -199,6 +201,7 @@ class CollectionDto {
   final int displayOrder;
   final String? coverUrl;
   final int placeCount;
+  final List<PlaceModel> places;
 
   const CollectionDto({
     required this.id,
@@ -208,9 +211,17 @@ class CollectionDto {
     this.displayOrder = 0,
     this.coverUrl,
     this.placeCount = 0,
+    this.places = const [],
   });
 
   factory CollectionDto.fromJson(Map<String, dynamic> json) {
+    List<PlaceModel> placesList = [];
+    if (json['places'] is List) {
+      placesList = (json['places'] as List)
+          .map((e) => PlaceModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
     return CollectionDto(
       id: (json['id'] as num?)?.toInt() ?? 0,
       title: json['title']?.toString() ?? '',
@@ -218,7 +229,8 @@ class CollectionDto {
       isFeatured: json['isFeatured'] as bool? ?? true,
       displayOrder: (json['displayOrder'] as num?)?.toInt() ?? 0,
       coverUrl: json['coverUrl']?.toString() ?? json['imageUrl']?.toString(),
-      placeCount: (json['placeCount'] as num?)?.toInt() ?? 0,
+      placeCount: (json['placeCount'] as num?)?.toInt() ?? (placesList.isNotEmpty ? placesList.length : 0),
+      places: placesList,
     );
   }
 
@@ -231,6 +243,7 @@ class CollectionDto {
       'displayOrder': displayOrder,
       'coverUrl': coverUrl,
       'placeCount': placeCount,
+      'places': places.map((e) => e.toJson()).toList(),
     };
   }
 }
@@ -243,6 +256,7 @@ class RegionDto {
   final String? imageUrl;
   final int orderIndex;
   final int provinceCount;
+  final List<ProvinceDto> provinces;
 
   const RegionDto({
     required this.id,
@@ -252,9 +266,17 @@ class RegionDto {
     this.imageUrl,
     this.orderIndex = 0,
     this.provinceCount = 0,
+    this.provinces = const [],
   });
 
   factory RegionDto.fromJson(Map<String, dynamic> json) {
+    List<ProvinceDto> provList = [];
+    if (json['provinces'] is List) {
+      provList = (json['provinces'] as List)
+          .map((e) => ProvinceDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
     return RegionDto(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? '',
@@ -262,7 +284,8 @@ class RegionDto {
       description: json['description']?.toString(),
       imageUrl: json['imageUrl']?.toString(),
       orderIndex: (json['orderIndex'] as num?)?.toInt() ?? 0,
-      provinceCount: (json['provinceCount'] as num?)?.toInt() ?? 0,
+      provinceCount: (json['provinceCount'] as num?)?.toInt() ?? provList.length,
+      provinces: provList,
     );
   }
 
@@ -275,6 +298,7 @@ class RegionDto {
       'imageUrl': imageUrl,
       'orderIndex': orderIndex,
       'provinceCount': provinceCount,
+      'provinces': provinces.map((e) => e.toJson()).toList(),
     };
   }
 }
