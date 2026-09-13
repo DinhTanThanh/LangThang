@@ -28,19 +28,40 @@ class BlogModel {
   });
 
   factory BlogModel.fromJson(Map<String, dynamic> json) {
+    String authorName = 'Tác giả';
+    String authorAvatar = '';
+    if (json['author'] is Map<String, dynamic>) {
+      final authorObj = json['author'] as Map<String, dynamic>;
+      authorName = authorObj['name']?.toString() ?? 'Tác giả';
+      authorAvatar = authorObj['avatar']?.toString() ?? '';
+    } else if (json['authorName'] != null) {
+      authorName = json['authorName'].toString();
+      authorAvatar = json['authorAvatar']?.toString() ?? '';
+    }
+
+    int readTimeMinutes = 5;
+    if (json['readTimeMinutes'] is int) {
+      readTimeMinutes = json['readTimeMinutes'] as int;
+    } else if (json['readTime'] != null) {
+      final match = RegExp(r'(\d+)').firstMatch(json['readTime'].toString());
+      if (match != null) {
+        readTimeMinutes = int.tryParse(match.group(1)!) ?? 5;
+      }
+    }
+
     return BlogModel(
-      id: json['id'] as String,
-      title: json['title'] as String,
-      summary: json['summary'] as String? ?? '',
-      category: json['category'] as String? ?? 'Du lịch',
-      imageUrl: json['imageUrl'] as String? ?? '',
-      authorName: json['authorName'] as String? ?? 'Tác giả',
-      authorAvatar: json['authorAvatar'] as String? ?? '',
-      publishedDate: json['publishedDate'] as String? ?? '',
-      readTimeMinutes: json['readTimeMinutes'] as int? ?? 5,
-      likesCount: json['likesCount'] as int? ?? 0,
-      commentsCount: json['commentsCount'] as int? ?? 0,
-      content: json['content'] as String?,
+      id: json['id']?.toString() ?? json['slug']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      summary: json['summary']?.toString() ?? json['excerpt']?.toString() ?? '',
+      category: json['category']?.toString() ?? 'Du lịch',
+      imageUrl: json['imageUrl']?.toString() ?? json['coverUrl']?.toString() ?? '',
+      authorName: authorName,
+      authorAvatar: authorAvatar,
+      publishedDate: json['publishedDate']?.toString() ?? json['publishedAt']?.toString() ?? '',
+      readTimeMinutes: readTimeMinutes,
+      likesCount: json['likesCount'] is int ? json['likesCount'] as int : 0,
+      commentsCount: json['commentsCount'] is int ? json['commentsCount'] as int : 0,
+      content: json['content']?.toString(),
     );
   }
 

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/user_model.dart';
-import '../../../data/services/auth_service.dart';
 import '../../../data/mock/mock_data.dart';
+import '../../../data/services/auth_service.dart';
+import '../../../data/models/place_model.dart';
+import '../../../data/services/place_api_service.dart';
+import '../destinations/contribute_place_screen.dart';
+import '../destinations/place_detail_screen.dart';
+import '../itineraries/itineraries_screen.dart';
 import '../auth/login_screen.dart';
 import 'edit_profile_dialog.dart';
 import 'change_password_dialog.dart';
@@ -16,15 +21,72 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final AuthService _authService = AuthService();
+  final PlaceApiService _placeApiService = PlaceApiService();
   UserModel? _user;
   bool _isLoading = true;
   bool _isLoggedIn = true;
   int _activeTabIndex = 0; // 0: posts, 1: itineraries, 2: saved, 3: suggested
 
+  List<PlaceModel> _savedPlaces = [];
+  bool _loadingSavedPlaces = false;
+
+  List<PlaceModel> _contributedPlaces = [];
+  bool _loadingContributedPlaces = false;
+
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadSavedPlaces();
+    _loadContributedPlaces();
+  }
+
+  Future<void> _loadSavedPlaces() async {
+    setState(() => _loadingSavedPlaces = true);
+    final res = await _placeApiService.getSavedPlaces();
+    if (mounted) {
+      setState(() {
+        _loadingSavedPlaces = false;
+        if (res.success && res.data != null) {
+          _savedPlaces = res.data!;
+        }
+      });
+    }
+  }
+
+  Future<void> _loadContributedPlaces() async {
+    setState(() => _loadingContributedPlaces = true);
+    final res = await _placeApiService.getUserContributedPlaces();
+    if (mounted) {
+      setState(() {
+        _loadingContributedPlaces = false;
+        if (res.success && res.data != null) {
+          _contributedPlaces = res.data!;
+        }
+      });
+    }
+  }
+
+  Future<void> _unsavePlace(PlaceModel place) async {
+    await _placeApiService.unsavePlace(place.id);
+    if (mounted) {
+      setState(() {
+        _savedPlaces.removeWhere((p) => p.id == place.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã bỏ lưu "${place.name}"'),
+          action: SnackBarAction(
+            label: 'Hoàn tác',
+            textColor: Colors.amber,
+            onPressed: () async {
+              await _placeApiService.savePlace(place.id);
+              _loadSavedPlaces();
+            },
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadProfile({bool forceRefresh = false}) async {
@@ -673,10 +735,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ==================== 5. TABS NAVIGATION ====================
   Widget _buildTabsNavigation() {
     final tabs = [
-      {'title': 'Bài viết (0)', 'icon': Icons.menu_book_outlined},
+      {'title': 'Bài viết (${_user?.blogsCount ?? 0})', 'icon': Icons.menu_book_outlined},
       {'title': 'Lịch trình (0)', 'icon': Icons.explore_outlined},
-      {'title': 'Đã lưu (0)', 'icon': Icons.bookmark_border_outlined},
-      {'title': 'Đề xuất (0)', 'icon': Icons.add_circle_outline},
+      {'title': 'Đã lưu (${_savedPlaces.length})', 'icon': Icons.bookmark_border_outlined},
+      {'title': 'Đề xuất (${_contributedPlaces.length})', 'icon': Icons.add_circle_outline},
     ];
 
     return Container(
@@ -695,7 +757,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: List.generate(tabs.length, (index) {
               final isSelected = _activeTabIndex == index;
               return InkWell(
-                onTap: () => setState(() => _activeTabIndex = index),
+                onTap: () {
+                  setState(() => _activeTabIndex = index);
+                  if (index == 2) _loadSavedPlaces();
+                  if (index == 3) _loadContributedPlaces();
+                },
                 borderRadius: BorderRadius.circular(16),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
@@ -735,7 +801,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ==================== 6. TAB CONTENT (EMPTY STATES) ====================
+  // ==================== 6. TAB CONTENT ====================
   Widget _buildTabContent() {
     switch (_activeTabIndex) {
       case 0:
@@ -744,7 +810,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           iconBg: const Color(0xFFECFDF5),
           iconColor: const Color(0xFF047857),
           title: 'Chưa có bài viết nào',
-          description: 'Bạn chưa đăng bài viết chia sẻ kinh nghiệm du lịch nào. Hãy viết bài đầu tiên để chia sẻ với cộng đồng LangThang!',
+          description:
+              'Bạn chưa đăng bài viết chia sẻ kinh nghiệm du lịch nào. Hãy viết bài đầu tiên để chia sẻ với cộng đồng LangThang!',
+          actionText: 'Tạo bài viết mới',
+          onAction: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Tính năng tạo bài viết đang kết nối')),
+            );
+          },
         );
       case 1:
         return _buildEmptyState(
@@ -752,26 +825,396 @@ class _ProfileScreenState extends State<ProfileScreen> {
           iconBg: const Color(0xFFFFFBEB),
           iconColor: const Color(0xFFD97706),
           title: 'Chưa có lịch trình nào',
-          description: 'Bạn chưa lên lịch trình khám phá nào. Hãy tạo kế hoạch cho chuyến đi tiếp theo của bạn!',
+          description:
+              'Bạn chưa lên lịch trình khám phá nào. Hãy tạo kế hoạch cho chuyến đi tiếp theo của bạn!',
+          actionText: 'Khám phá lịch trình mẫu',
+          onAction: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ItinerariesScreen()),
+            );
+          },
         );
       case 2:
-        return _buildEmptyState(
-          icon: Icons.bookmark_border_outlined,
-          iconBg: const Color(0xFFF1F5F9),
-          iconColor: const Color(0xFF475569),
-          title: 'Chưa lưu địa điểm nào',
-          description: 'Danh sách các địa điểm yêu thích của bạn đang trống. Hãy dạo quanh trang chủ để lưu lại các địa điểm hấp dẫn!',
-        );
+        return _buildSavedPlacesTab();
       case 3:
       default:
-        return _buildEmptyState(
-          icon: Icons.inbox_outlined,
-          iconBg: const Color(0xFFEFF6FF),
-          iconColor: const Color(0xFF2563EB),
-          title: 'Chưa có đề xuất địa điểm nào',
-          description: 'Bạn chưa gửi đề xuất địa điểm mới nào cho hệ thống. Đóng góp địa điểm để tích lũy điểm cống hiến nhé!',
-        );
+        return _buildContributedPlacesTab();
     }
+  }
+
+  // ==================== SAVED PLACES TAB ====================
+  Widget _buildSavedPlacesTab() {
+    if (_loadingSavedPlaces) {
+      return Container(
+        padding: const EdgeInsets.all(40),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+        ),
+      );
+    }
+
+    if (_savedPlaces.isEmpty) {
+      return _buildEmptyState(
+        icon: Icons.bookmark_border_outlined,
+        iconBg: const Color(0xFFF1F5F9),
+        iconColor: const Color(0xFF475569),
+        title: 'Chưa lưu địa điểm nào',
+        description:
+            'Danh sách các địa điểm yêu thích của bạn đang trống. Hãy dạo quanh bản đồ và trang chủ để lưu lại các địa điểm hấp dẫn!',
+      );
+    }
+
+    return Column(
+      children: [
+        for (final place in _savedPlaces)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: InkWell(
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PlaceDetailScreen(place: place),
+                  ),
+                );
+                _loadSavedPlaces();
+              },
+              borderRadius: BorderRadius.circular(18),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    // Thumbnail
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 84,
+                        height: 84,
+                        child: Image.network(
+                          place.img,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            color: const Color(0xFFF1F5F9),
+                            child: const Icon(Icons.image_not_supported_outlined, color: Color(0xFF94A3B8)),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+
+                    // Info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFECFDF5),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  place.category,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF047857),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              if (place.rating > 0) ...[
+                                const Icon(Icons.star_rounded, size: 14, color: Color(0xFFF59E0B)),
+                                const SizedBox(width: 2),
+                                Text(
+                                  place.rating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            place.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              const Icon(Icons.location_on_outlined, size: 12, color: Color(0xFF64748B)),
+                              const SizedBox(width: 3),
+                              Expanded(
+                                child: Text(
+                                  place.location.isNotEmpty ? place.location : place.province,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Unsave button
+                    IconButton(
+                      icon: const Icon(Icons.bookmark_remove_outlined, color: Color(0xFFEF4444), size: 20),
+                      tooltip: 'Bỏ lưu',
+                      onPressed: () => _unsavePlace(place),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ==================== CONTRIBUTED PLACES TAB ====================
+  Widget _buildContributedPlacesTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Action Header Card
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text(
+                      'Đóng góp của bạn',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF111827)),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Gửi địa điểm mới để nhận +50 điểm uy tín',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final added = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ContributePlaceScreen()),
+                  );
+                  if (added == true) {
+                    _loadContributedPlaces();
+                  }
+                },
+                icon: const Icon(Icons.add_rounded, size: 16, color: Colors.white),
+                label: const Text('Đóng góp mới', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF059669),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        if (_loadingContributedPlaces)
+          Container(
+            padding: const EdgeInsets.all(40),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+            ),
+          )
+        else if (_contributedPlaces.isEmpty)
+          _buildEmptyState(
+            icon: Icons.inbox_outlined,
+            iconBg: const Color(0xFFEFF6FF),
+            iconColor: const Color(0xFF2563EB),
+            title: 'Chưa có đề xuất địa điểm nào',
+            description:
+                'Bạn chưa gửi đề xuất địa điểm mới nào cho hệ thống. Đóng góp địa điểm để tích lũy điểm cống hiến nhé!',
+            actionText: 'Đóng góp địa điểm ngay (+50đ)',
+            onAction: () async {
+              final added = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (context) => const ContributePlaceScreen()),
+              );
+              if (added == true) {
+                _loadContributedPlaces();
+              }
+            },
+          )
+        else
+          Column(
+            children: [
+              for (final place in _contributedPlaces)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(
+                            width: 78,
+                            height: 78,
+                            child: Image.network(
+                              place.img,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                color: const Color(0xFFF1F5F9),
+                                child: const Icon(Icons.place_outlined, color: Color(0xFF94A3B8)),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFECFDF5),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      place.category,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF047857),
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                    decoration: BoxDecoration(
+                                      color: place.status.contains('Duyệt')
+                                          ? const Color(0xFFFEF3C7)
+                                          : const Color(0xFFD1FAE5),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          place.status.contains('Duyệt')
+                                              ? Icons.access_time_rounded
+                                              : Icons.check_circle_rounded,
+                                          size: 11,
+                                          color: place.status.contains('Duyệt')
+                                              ? const Color(0xFFD97706)
+                                              : const Color(0xFF059669),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          place.status,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: place.status.contains('Duyệt')
+                                              ? const Color(0xFFB45309)
+                                              : const Color(0xFF065F46),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                place.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF111827),
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${place.province} • ${place.location}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
   }
 
   Widget _buildEmptyState({
@@ -780,9 +1223,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required Color iconColor,
     required String title,
     required String description,
+    String? actionText,
+    VoidCallback? onAction,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
@@ -823,6 +1268,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
+            if (actionText != null && onAction != null) ...[
+              const SizedBox(height: 18),
+              ElevatedButton(
+                onPressed: onAction,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF059669),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+                child: Text(actionText, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5)),
+              ),
+            ],
           ],
         ),
       ),

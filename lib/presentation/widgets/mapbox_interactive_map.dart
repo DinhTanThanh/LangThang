@@ -62,11 +62,17 @@ class MapboxInteractiveMap extends StatefulWidget {
   State<MapboxInteractiveMap> createState() => MapboxInteractiveMapState();
 }
 
-class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
+class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
+    with SingleTickerProviderStateMixin {
   late double _centerLat;
   late double _centerLng;
   late double _zoom;
   double _baseZoom = 14.5;
+
+  AnimationController? _animController;
+  Animation<double>? _latAnim;
+  Animation<double>? _lngAnim;
+  Animation<double>? _zoomAnim;
 
   static const int tileSize = 512;
 
@@ -76,6 +82,16 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
     _centerLat = widget.initialLat;
     _centerLng = widget.initialLng;
     _zoom = widget.initialZoom;
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController?.dispose();
+    super.dispose();
   }
 
   @override
@@ -84,9 +100,7 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
     if (oldWidget.initialLat != widget.initialLat ||
         oldWidget.initialLng != widget.initialLng ||
         oldWidget.initialZoom != widget.initialZoom) {
-      _centerLat = widget.initialLat;
-      _centerLng = widget.initialLng;
-      _zoom = widget.initialZoom;
+      flyTo(widget.initialLat, widget.initialLng, widget.initialZoom, 400);
     }
   }
 
@@ -104,11 +118,7 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
     final lngDiff = (maxLng - minLng).abs();
 
     if (latDiff < 0.0001 && lngDiff < 0.0001) {
-      setState(() {
-        _centerLat = centerLat;
-        _centerLng = centerLng;
-        _zoom = 15.0;
-      });
+      flyTo(centerLat, centerLng, 15.0, 500);
       return;
     }
 
@@ -116,31 +126,55 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
     double targetZoom = (math.log(360 / maxDim) / math.ln2) - 1.2;
     targetZoom = targetZoom.clamp(4.0, 18.0);
 
-    setState(() {
-      _centerLat = centerLat;
-      _centerLng = centerLng;
-      _zoom = targetZoom;
-    });
+    flyTo(centerLat, centerLng, targetZoom, 600);
+  }
+
+  void flyTo(double targetLat, double targetLng, [double? targetZoom, int durationMs = 500]) {
+    if (!mounted || _animController == null) return;
+    _animController!.stop();
+    final startLat = _centerLat;
+    final startLng = _centerLng;
+    final startZoom = _zoom;
+    final endZoom = (targetZoom ?? _zoom).clamp(3.0, 19.0);
+
+    _latAnim = Tween<double>(begin: startLat, end: targetLat).animate(
+      CurvedAnimation(parent: _animController!, curve: Curves.easeInOutCubic),
+    );
+    _lngAnim = Tween<double>(begin: startLng, end: targetLng).animate(
+      CurvedAnimation(parent: _animController!, curve: Curves.easeInOutCubic),
+    );
+    _zoomAnim = Tween<double>(begin: startZoom, end: endZoom).animate(
+      CurvedAnimation(parent: _animController!, curve: Curves.easeInOutCubic),
+    );
+
+    _animController!.duration = Duration(milliseconds: durationMs);
+    _animController!.reset();
+    _animController!.forward();
+    _animController!.addListener(_animListener);
+  }
+
+  void _animListener() {
+    if (!mounted) return;
+    if (_latAnim != null && _lngAnim != null && _zoomAnim != null) {
+      setState(() {
+        _centerLat = _latAnim!.value;
+        _centerLng = _lngAnim!.value;
+        _zoom = _zoomAnim!.value;
+      });
+      widget.onMapMoved?.call();
+    }
   }
 
   void setCenter(double lat, double lng, [double? zoom]) {
-    setState(() {
-      _centerLat = lat;
-      _centerLng = lng;
-      if (zoom != null) _zoom = zoom.clamp(3.0, 19.0);
-    });
+    flyTo(lat, lng, zoom, 400);
   }
 
-  void zoomIn() {
-    setState(() {
-      _zoom = (_zoom + 1.0).clamp(3.0, 19.0);
-    });
+  void zoomIn([double delta = 1.0]) {
+    flyTo(_centerLat, _centerLng, (_zoom + delta).clamp(3.0, 19.0), 280);
   }
 
-  void zoomOut() {
-    setState(() {
-      _zoom = (_zoom - 1.0).clamp(3.0, 19.0);
-    });
+  void zoomOut([double delta = 1.0]) {
+    flyTo(_centerLat, _centerLng, (_zoom - delta).clamp(3.0, 19.0), 280);
   }
 
   // Convert (Lat, Lng) to World Pixel at Zoom level Z (512px tile size)
@@ -176,6 +210,71 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
     widget.onMapMoved?.call();
   }
 
+  List<Widget> _buildTilesForZoomLevel({
+    required int level,
+    required double currentZoom,
+    required double centerLat,
+    required double centerLng,
+    required double screenWidth,
+    required double screenHeight,
+    required bool isUnderlay,
+  }) {
+    if (level < 2 || level > 20) return const [];
+    final double scaleDiff = math.pow(2.0, currentZoom - level).toDouble();
+    final centerPixel = latLngToPixel(centerLat, centerLng, level.toDouble());
+
+    final minScreenX = centerPixel.x - (screenWidth / 2) / scaleDiff;
+    final maxScreenX = centerPixel.x + (screenWidth / 2) / scaleDiff;
+    final minScreenY = centerPixel.y - (screenHeight / 2) / scaleDiff;
+    final maxScreenY = centerPixel.y + (screenHeight / 2) / scaleDiff;
+
+    final int minTileX = (minScreenX / tileSize).floor() - 1;
+    final int maxTileX = (maxScreenX / tileSize).floor() + 1;
+    final int minTileY = (minScreenY / tileSize).floor() - 1;
+    final int maxTileY = (maxScreenY / tileSize).floor() + 1;
+
+    final maxTilesAtLevel = 1 << level;
+    final List<Widget> widgets = [];
+
+    for (int tx = minTileX; tx <= maxTileX; tx++) {
+      final int wrappedTx = (tx % maxTilesAtLevel + maxTilesAtLevel) % maxTilesAtLevel;
+      for (int ty = minTileY; ty <= maxTileY; ty++) {
+        if (ty < 0 || ty >= maxTilesAtLevel) continue;
+
+        final tileOriginPixelX = tx * tileSize;
+        final tileOriginPixelY = ty * tileSize;
+
+        final double screenPosX = (screenWidth / 2) + (tileOriginPixelX - centerPixel.x) * scaleDiff;
+        final double screenPosY = (screenHeight / 2) + (tileOriginPixelY - centerPixel.y) * scaleDiff;
+        final double renderedTileSize = tileSize * scaleDiff;
+
+        final tileUrl =
+            'https://api.mapbox.com/styles/v1/${widget.styleId}/tiles/$tileSize/$level/$wrappedTx/$ty@2x?access_token=${widget.token}';
+
+        widgets.add(
+          Positioned(
+            left: screenPosX,
+            top: screenPosY,
+            width: renderedTileSize + 0.6,
+            height: renderedTileSize + 0.6,
+            child: Image.network(
+              tileUrl,
+              fit: BoxFit.fill,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.low,
+              cacheWidth: tileSize,
+              cacheHeight: tileSize,
+              errorBuilder: (ctx, err, stack) => isUnderlay
+                  ? const SizedBox.shrink()
+                  : Container(color: const Color(0xFFF1F5F9)),
+            ),
+          ),
+        );
+      }
+    }
+    return widgets;
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -183,59 +282,31 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
         final screenWidth = constraints.maxWidth;
         final screenHeight = constraints.maxHeight;
 
-        final int intZoom = _zoom.floor().clamp(0, 20);
-        final double zoomFraction = _zoom - intZoom;
-        final double tileScale = math.pow(2.0, zoomFraction).toDouble();
+        final int intZoom = _zoom.floor().clamp(2, 20);
 
-        final centerPixel = latLngToPixel(_centerLat, _centerLng, intZoom.toDouble());
+        // 1. Underlay tiles from parent zoom (prevents any blank/white flashing during zoom)
+        final List<Widget> underlayTiles = (intZoom > 2)
+            ? _buildTilesForZoomLevel(
+                level: intZoom - 1,
+                currentZoom: _zoom,
+                centerLat: _centerLat,
+                centerLng: _centerLng,
+                screenWidth: screenWidth,
+                screenHeight: screenHeight,
+                isUnderlay: true,
+              )
+            : [];
 
-        // Calculate tile range to cover the screen plus a 1-tile buffer
-        final minScreenX = centerPixel.x - (screenWidth / 2) / tileScale;
-        final maxScreenX = centerPixel.x + (screenWidth / 2) / tileScale;
-        final minScreenY = centerPixel.y - (screenHeight / 2) / tileScale;
-        final maxScreenY = centerPixel.y + (screenHeight / 2) / tileScale;
-
-        final int minTileX = (minScreenX / tileSize).floor() - 1;
-        final int maxTileX = (maxScreenX / tileSize).floor() + 1;
-        final int minTileY = (minScreenY / tileSize).floor() - 1;
-        final int maxTileY = (maxScreenY / tileSize).floor() + 1;
-
-        final maxTilesAtZoom = 1 << intZoom;
-
-        final List<Widget> tileWidgets = [];
-
-        for (int tx = minTileX; tx <= maxTileX; tx++) {
-          final int wrappedTx = (tx % maxTilesAtZoom + maxTilesAtZoom) % maxTilesAtZoom;
-          for (int ty = minTileY; ty <= maxTileY; ty++) {
-            if (ty < 0 || ty >= maxTilesAtZoom) continue;
-
-            final tileOriginPixelX = tx * tileSize;
-            final tileOriginPixelY = ty * tileSize;
-
-            // Position on screen relative to center
-            final double screenPosX = (screenWidth / 2) + (tileOriginPixelX - centerPixel.x) * tileScale;
-            final double screenPosY = (screenHeight / 2) + (tileOriginPixelY - centerPixel.y) * tileScale;
-            final double renderedTileSize = tileSize * tileScale;
-
-            final tileUrl =
-                'https://api.mapbox.com/styles/v1/${widget.styleId}/tiles/$tileSize/$intZoom/$wrappedTx/$ty@2x?access_token=${widget.token}';
-
-            tileWidgets.add(
-              Positioned(
-                left: screenPosX,
-                top: screenPosY,
-                width: renderedTileSize + 0.5, // slight overlap to prevent seam lines
-                height: renderedTileSize + 0.5,
-                child: Image.network(
-                  tileUrl,
-                  fit: BoxFit.fill,
-                  filterQuality: FilterQuality.medium,
-                  errorBuilder: (ctx, err, stack) => Container(color: const Color(0xFFF1F5F9)),
-                ),
-              ),
-            );
-          }
-        }
+        // 2. High-resolution current zoom tiles
+        final List<Widget> currentTiles = _buildTilesForZoomLevel(
+          level: intZoom,
+          currentZoom: _zoom,
+          centerLat: _centerLat,
+          centerLng: _centerLng,
+          screenWidth: screenWidth,
+          screenHeight: screenHeight,
+          isUnderlay: false,
+        );
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -266,8 +337,9 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap> {
             child: Stack(
               clipBehavior: Clip.hardEdge,
               children: [
-                // 1. Dynamic Infinite Mapbox Tiles Layer
-                ...tileWidgets,
+                // 1. Dynamic Infinite Mapbox Tiles Layer (Underlay + Current Zoom)
+                ...underlayTiles,
+                ...currentTiles,
 
                 // 2. Google Maps Style Polyline Route Overlay
                 if (widget.routeCoordinates != null && widget.routeCoordinates!.isNotEmpty)
