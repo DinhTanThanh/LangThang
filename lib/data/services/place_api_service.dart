@@ -12,6 +12,7 @@ import '../models/region_landing_model.dart';
 import '../models/review_model.dart';
 import '../mock/mock_data.dart';
 import 'auth_service.dart';
+import 'favorite_api_service.dart';
 
 class PlaceApiService {
   static final PlaceApiService _instance = PlaceApiService._internal();
@@ -1133,6 +1134,8 @@ class PlaceApiService {
 
   /// Kiểm tra địa điểm đã được lưu chưa
   Future<bool> isPlaceSaved(int placeId) async {
+    final isFav = await FavoriteApiService().isFavorite(1, placeId);
+    if (isFav) return true;
     final ids = await getSavedPlaceIds();
     return ids.contains(placeId);
   }
@@ -1172,15 +1175,28 @@ class PlaceApiService {
   }
 
   /// POST /api/places/{id}/save
-  Future<ApiResponse<bool>> savePlace(int placeId) async {
+  Future<ApiResponse<bool>> savePlace(int placeId, {PlaceModel? place}) async {
     try {
-      // Cập nhật local storage trước
+      // 1. Cập nhật local storage
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList(_savedPlacesKey) ?? [];
       if (!list.contains(placeId.toString())) {
         list.add(placeId.toString());
         await prefs.setStringList(_savedPlacesKey, list);
       }
+
+      // 2. Thêm vào FavoriteApiService để đồng bộ trang Profile -> Mục "Đã lưu"
+      await FavoriteApiService().addFavorite(
+        targetType: 1,
+        targetId: placeId,
+        title: place?.name,
+        subtitle: place?.province,
+        coverImg: place?.imageUrl,
+        categoryTag: place?.category,
+        rating: place?.rating,
+        reviewCount: place?.reviewCount,
+        price: place?.price,
+      );
 
       final token = await AuthService().getAccessToken();
       if (token == null || token.isEmpty) {
@@ -1225,11 +1241,17 @@ class PlaceApiService {
   /// DELETE /api/places/{id}/save
   Future<ApiResponse<bool>> unsavePlace(int placeId) async {
     try {
-      // Cập nhật local storage
+      // 1. Cập nhật local storage
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList(_savedPlacesKey) ?? [];
       list.remove(placeId.toString());
       await prefs.setStringList(_savedPlacesKey, list);
+
+      // 2. Bỏ lưu khỏi FavoriteApiService
+      await FavoriteApiService().removeFavorite(
+        targetType: 1,
+        targetId: placeId,
+      );
 
       final token = await AuthService().getAccessToken();
       if (token == null || token.isEmpty) {
@@ -1611,6 +1633,64 @@ class PlaceApiService {
     }
     return s;
   }
+
+  /// GET /api/place-types
+  Future<ApiResponse<List<PlaceTypeDto>>> getPlaceTypes() async {
+    try {
+      final url = Uri.parse('${ApiConstants.baseUrl}${ApiConstants.placeTypes}');
+      final response = await http
+          .get(url, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        final raw = json['data'] is List ? json['data'] as List : [];
+        final list = raw.map((e) => PlaceTypeDto.fromJson(e as Map<String, dynamic>)).toList();
+        if (list.isNotEmpty) {
+          return ApiResponse<List<PlaceTypeDto>>(success: true, message: 'OK', data: list);
+        }
+      }
+    } catch (_) {}
+
+    return const ApiResponse<List<PlaceTypeDto>>(
+      success: true,
+      message: 'OK',
+      data: [
+        PlaceTypeDto(
+          id: 1,
+          name: 'Khám phá thiên nhiên',
+          imageUrl: 'https://images.unsplash.com/photo-1528127269322-539801943592?w=600&fit=crop',
+          placeCount: 120,
+        ),
+        PlaceTypeDto(
+          id: 2,
+          name: 'Ẩm thực đường phố',
+          imageUrl: 'https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?w=600&fit=crop',
+          placeCount: 85,
+        ),
+        PlaceTypeDto(
+          id: 3,
+          name: 'Di tích lịch sử',
+          imageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=600&fit=crop',
+          placeCount: 64,
+        ),
+        PlaceTypeDto(
+          id: 4,
+          name: 'Biển đảo nghỉ dưỡng',
+          imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&fit=crop',
+          placeCount: 92,
+        ),
+        PlaceTypeDto(
+          id: 5,
+          name: 'Điểm check-in hot',
+          imageUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=600&fit=crop',
+          placeCount: 150,
+        ),
+      ],
+    );
+  }
 }
+
+
 
 

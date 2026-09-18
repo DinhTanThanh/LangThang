@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../../data/models/itinerary_model.dart';
 import '../../../data/services/travel_api_service.dart';
 import '../../../data/services/auth_service.dart';
-import '../../widgets/itinerary_card.dart';
+import '../../widgets/itinerary/itinerary_catalog_card.dart';
+import '../../widgets/itinerary/itinerary_quick_preview_modal.dart';
 import '../../widgets/itinerary_auth_gate.dart';
 import '../auth/login_screen.dart';
+import 'itinerary_detail_screen.dart';
 
 class ItinerariesScreen extends StatefulWidget {
   final String? initialKeyword;
@@ -28,17 +30,40 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
   bool _isCheckingAuth = true;
   List<ItineraryModel> _itineraries = [];
   bool _isLoading = true;
+
+  String _selectedRegion = 'all';
   String _selectedDuration = 'all';
-  int? _expandedId;
+  String _selectedBudget = 'all';
   final Map<int, bool> _savedStatus = {};
+
+  final List<Map<String, String>> _regions = const [
+    {'id': 'all', 'label': 'Tất cả vùng miền'},
+    {'id': 'north', 'label': '🏔️ Miền Bắc'},
+    {'id': 'central', 'label': '🏖️ Miền Trung'},
+    {'id': 'south', 'label': '🌴 Miền Nam'},
+  ];
 
   final List<Map<String, String>> _durations = const [
     {'id': 'all', 'label': 'Tất cả thời lượng'},
     {'id': '1_day', 'label': '⚡ 1 Ngày'},
-    {'id': '2d1n', 'label': '🏖️ 2 Ngày 1 Đêm'},
-    {'id': '3d2n', 'label': '🏞️ 3 Ngày 2 Đêm'},
-    {'id': '4d3n', 'label': '✈️ 4 Ngày 3 Đêm'},
+    {'id': '2d1n', 'label': '🏖️ 2N1Đ'},
+    {'id': '3d2n', 'label': '🏞️ 3N2Đ'},
+    {'id': '4d3n', 'label': '✈️ 4N3Đ'},
   ];
+
+  final List<Map<String, String>> _budgets = const [
+    {'id': 'all', 'label': 'Tất cả mức giá'},
+    {'id': 'under1m', 'label': 'Dưới 1 triệu'},
+    {'id': '1m-3m', 'label': '1 - 3 triệu'},
+    {'id': '3m-5m', 'label': '3 - 5 triệu'},
+    {'id': 'above5m', 'label': 'Trên 5 triệu'},
+  ];
+
+  bool get _hasActiveFilters =>
+      _selectedRegion != 'all' ||
+      _selectedDuration != 'all' ||
+      _selectedBudget != 'all' ||
+      _searchController.text.isNotEmpty;
 
   @override
   void initState() {
@@ -85,17 +110,26 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
     final list = await _apiService.getItineraries(
       duration: _selectedDuration,
       keyword: _searchController.text.trim(),
+      region: _selectedRegion,
+      budget: _selectedBudget,
     );
 
     if (mounted) {
       setState(() {
         _itineraries = list;
         _isLoading = false;
-        if (list.isNotEmpty && (_expandedId == null || !list.any((i) => i.id == _expandedId))) {
-          _expandedId = list.first.id;
-        }
       });
     }
+  }
+
+  void _resetFilters() {
+    setState(() {
+      _selectedRegion = 'all';
+      _selectedDuration = 'all';
+      _selectedBudget = 'all';
+      _searchController.clear();
+    });
+    _loadItineraries();
   }
 
   Future<void> _handleSaveItinerary(int id) async {
@@ -125,28 +159,52 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
     }
 
     final isAlreadySaved = _savedStatus[id] ?? false;
+    final willSave = !isAlreadySaved;
     setState(() {
-      _savedStatus[id] = !isAlreadySaved;
+      _savedStatus[id] = willSave;
     });
 
-    await _apiService.saveItinerary(id);
+    ItineraryModel? foundItem;
+    try {
+      foundItem = _itineraries.firstWhere((item) => item.id == id);
+    } catch (_) {}
+
+    await _apiService.saveItinerary(id, itinerary: foundItem, isSaving: willSave);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            !isAlreadySaved
-                ? 'Đã lưu lịch trình vào bộ sưu tập cá nhân!'
-                : 'Đã bỏ lưu lịch trình.',
+            willSave ? 'Đã lưu lịch trình vào bộ sưu tập cá nhân!' : 'Đã bỏ lưu lịch trình.',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          backgroundColor: !isAlreadySaved ? const Color(0xFF047857) : const Color(0xFF374151),
+          backgroundColor: willSave ? const Color(0xFF047857) : const Color(0xFF374151),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           duration: const Duration(seconds: 2),
         ),
       );
     }
+  }
+
+  void _openDetailScreen(ItineraryModel itinerary) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ItineraryDetailScreen(
+          itinerary: itinerary,
+          initialIsSaved: _savedStatus[itinerary.id] ?? itinerary.isSaved,
+        ),
+      ),
+    );
+  }
+
+  void _openQuickPreview(ItineraryModel itinerary) {
+    ItineraryQuickPreviewModal.show(
+      context,
+      itinerary: itinerary,
+      onApply: () => _openDetailScreen(itinerary),
+    );
   }
 
   @override
@@ -158,10 +216,12 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         surfaceTintColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         title: const Text(
           'Lịch Trình Khám Phá',
           style: TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w800),
@@ -297,44 +357,149 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
                   onAuthSuccess: _checkAuthAndLoad,
                 ),
               ] else ...[
-                // Duration Filter Chips
+                // Multi-dimensional Filter Bar Container
                 Container(
                   color: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: _durations.map((dur) {
-                        final isSelected = _selectedDuration == dur['id'];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: InkWell(
-                            onTap: () {
-                              setState(() => _selectedDuration = dur['id']!);
-                              _loadItineraries();
-                            },
-                            borderRadius: BorderRadius.circular(20),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFF059669) : const Color(0xFFF3F4F6),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Region Filter Chips
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: _regions.map((reg) {
+                            final isSelected = _selectedRegion == reg['id'];
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() => _selectedRegion = reg['id']!);
+                                  _loadItineraries();
+                                },
                                 borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                dur['label']!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: isSelected ? Colors.white : const Color(0xFF374151),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 150),
+                                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6.5),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? const Color(0xFF059669) : const Color(0xFFF3F4F6),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    reg['label']!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: isSelected ? Colors.white : const Color(0xFF374151),
+                                    ),
+                                  ),
                                 ),
                               ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // Duration & Budget Chips Row
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            // Duration chips
+                            ..._durations.map((dur) {
+                              final isSelected = _selectedDuration == dur['id'];
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: InkWell(
+                                  onTap: () {
+                                    setState(() => _selectedDuration = dur['id']!);
+                                    _loadItineraries();
+                                  },
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: isSelected ? const Color(0xFF059669) : const Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      dur['label']!,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                        color: isSelected ? const Color(0xFF065F46) : const Color(0xFF4B5563),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+
+                            // Budget chips
+                            ..._budgets.where((b) => b['id'] != 'all').map((b) {
+                              final isSelected = _selectedBudget == b['id'];
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: InkWell(
+                                  onTap: () {
+                                    setState(() => _selectedBudget = isSelected ? 'all' : b['id']!);
+                                    _loadItineraries();
+                                  },
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? const Color(0xFFFEF3C7) : Colors.white,
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      b['label']!,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                        color: isSelected ? const Color(0xFF92400E) : const Color(0xFF4B5563),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+
+                      // Reset Filters Button if Active
+                      if (_hasActiveFilters) ...[
+                        const SizedBox(height: 6),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: InkWell(
+                            onTap: _resetFilters,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.restart_alt_rounded, size: 14, color: Color(0xFF059669)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Đặt lại bộ lọc',
+                                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
+                                ),
+                              ],
                             ),
                           ),
-                        );
-                      }).toList(),
-                    ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
 
@@ -399,8 +564,20 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
                               ),
                               const SizedBox(height: 4),
                               const Text(
-                                'Hãy thử thay đổi thời lượng hoặc từ khóa tìm kiếm.',
+                                'Hãy thử thay đổi vùng miền, thời lượng hoặc xóa bớt bộ lọc.',
                                 style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                              ),
+                              const SizedBox(height: 14),
+                              ElevatedButton.icon(
+                                onPressed: _resetFilters,
+                                icon: const Icon(Icons.restart_alt_rounded, size: 16),
+                                label: const Text('Xem tất cả lịch trình', style: TextStyle(fontSize: 12.5)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF059669),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  elevation: 0,
+                                ),
                               ),
                             ],
                           ),
@@ -410,22 +587,17 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: _itineraries.length,
-                          separatorBuilder: (context, index) => const SizedBox(height: 14),
+                          separatorBuilder: (context, index) => const SizedBox(height: 16),
                           itemBuilder: (context, index) {
                             final item = _itineraries[index];
-                            final isExpanded = _expandedId == item.id;
                             final isSaved = _savedStatus[item.id] ?? item.isSaved;
 
-                            return ItineraryCard(
+                            return ItineraryCatalogCard(
                               itinerary: item,
-                              isExpanded: isExpanded,
                               isSaved: isSaved,
-                              onToggleExpand: () {
-                                setState(() {
-                                  _expandedId = isExpanded ? null : item.id;
-                                });
-                              },
-                              onSave: (id) => _handleSaveItinerary(id),
+                              onQuickPreview: () => _openQuickPreview(item),
+                              onOpenDetail: () => _openDetailScreen(item),
+                              onToggleSave: (id) => _handleSaveItinerary(id),
                             );
                           },
                         ),

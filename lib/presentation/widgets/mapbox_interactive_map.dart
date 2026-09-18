@@ -36,6 +36,8 @@ class MapboxInteractiveMap extends StatefulWidget {
   final bool isNavigating;
   final List<MapboxCustomMarker>? customMarkers;
   final VoidCallback? onMapMoved;
+  final Function(double lat, double lng)? onTapLatLng;
+  final bool showZoomControls;
 
   const MapboxInteractiveMap({
     super.key,
@@ -56,6 +58,8 @@ class MapboxInteractiveMap extends StatefulWidget {
     this.isNavigating = false,
     this.customMarkers,
     this.onMapMoved,
+    this.onTapLatLng,
+    this.showZoomControls = true,
   });
 
   @override
@@ -329,6 +333,16 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
               _zoom = (_zoom + 1.0).clamp(3.0, 19.0);
             });
           },
+          onTapUp: (details) {
+            final double scale = tileSize * math.pow(2.0, _zoom).toDouble();
+            final centerPixel = latLngToPixel(_centerLat, _centerLng, _zoom);
+            final double tapPixelX = centerPixel.x + (details.localPosition.dx - screenWidth / 2);
+            final double tapPixelY = centerPixel.y + (details.localPosition.dy - screenHeight / 2);
+            final double tapLng = ((tapPixelX / scale) * 360.0 - 180.0).clamp(-180.0, 180.0);
+            final double n = math.pi - 2.0 * math.pi * (tapPixelY / scale);
+            final double tapLat = (180.0 / math.pi * math.atan(0.5 * (math.exp(n) - math.exp(-n)))).clamp(-85.0, 85.0);
+            widget.onTapLatLng?.call(tapLat, tapLng);
+          },
           child: Container(
             clipBehavior: Clip.hardEdge,
             decoration: const BoxDecoration(
@@ -410,11 +424,63 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
                         child: marker.child,
                       ),
                     ),
+
+                // 7. Floating Zoom Controls (+ / -)
+                if (widget.showZoomControls)
+                  Positioned(
+                    right: 10,
+                    top: 10,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildMapControlButton(
+                          icon: Icons.add,
+                          onPressed: () => zoomIn(1.0),
+                        ),
+                        const SizedBox(height: 4),
+                        _buildMapControlButton(
+                          icon: Icons.remove,
+                          onPressed: () => zoomOut(1.0),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMapControlButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 4,
+            offset: const Offset(0, 1.5),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onPressed,
+          child: Center(
+            child: Icon(icon, size: 18, color: const Color(0xFF1E293B)),
+          ),
+        ),
+      ),
     );
   }
 

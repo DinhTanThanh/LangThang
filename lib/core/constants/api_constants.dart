@@ -35,4 +35,5 @@ class ApiConstants {
   static const String provinces = '/api/provinces';
   static const String placeTypes = '/api/place-types';
   static const String featuredCollections = '/api/collections/featured';
+  static const String favorites = '/api/v1/users/me/favorites';
 }

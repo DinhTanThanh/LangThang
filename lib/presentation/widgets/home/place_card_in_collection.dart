@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/place_model.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../../data/services/favorite_api_service.dart';
 import '../../screens/destinations/place_detail_screen.dart';
 
 class PlaceCardInCollection extends StatefulWidget {
@@ -27,6 +28,23 @@ class _PlaceCardInCollectionState extends State<PlaceCardInCollection> {
   void initState() {
     super.initState();
     _isSaved = widget.place.isSaved;
+    _checkSaved();
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaceCardInCollection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.place.id != widget.place.id || oldWidget.place.isSaved != widget.place.isSaved) {
+      _isSaved = widget.place.isSaved;
+      _checkSaved();
+    }
+  }
+
+  Future<void> _checkSaved() async {
+    final isFav = await FavoriteApiService().isFavorite(1, widget.place.id);
+    if (mounted && (isFav != _isSaved)) {
+      setState(() => _isSaved = isFav);
+    }
   }
 
   void _prevImage() {
@@ -69,7 +87,7 @@ class _PlaceCardInCollectionState extends State<PlaceCardInCollection> {
 
     try {
       if (willSave) {
-        await PlaceApiService().savePlace(widget.place.id);
+        await PlaceApiService().savePlace(widget.place.id, place: widget.place);
       } else {
         await PlaceApiService().unsavePlace(widget.place.id);
       }

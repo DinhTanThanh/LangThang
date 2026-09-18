@@ -234,6 +234,28 @@ class CollectionDto {
     );
   }
 
+  CollectionDto copyWith({
+    int? id,
+    String? title,
+    String? description,
+    bool? isFeatured,
+    int? displayOrder,
+    String? coverUrl,
+    int? placeCount,
+    List<PlaceModel>? places,
+  }) {
+    return CollectionDto(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      isFeatured: isFeatured ?? this.isFeatured,
+      displayOrder: displayOrder ?? this.displayOrder,
+      coverUrl: coverUrl ?? this.coverUrl,
+      placeCount: placeCount ?? this.placeCount,
+      places: places ?? this.places,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -358,3 +380,44 @@ class ProvinceDto {
     };
   }
 }
+
+class PlaceTypeDto {
+  final int id;
+  final String name;
+  final String? description;
+  final String? iconClass;
+  final String? imageUrl;
+  final int placeCount;
+
+  const PlaceTypeDto({
+    required this.id,
+    required this.name,
+    this.description,
+    this.iconClass,
+    this.imageUrl,
+    this.placeCount = 0,
+  });
+
+  factory PlaceTypeDto.fromJson(Map<String, dynamic> json) {
+    return PlaceTypeDto(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: json['name']?.toString() ?? '',
+      description: json['description']?.toString(),
+      iconClass: json['iconClass']?.toString(),
+      imageUrl: json['imageUrl']?.toString() ?? json['img']?.toString(),
+      placeCount: (json['placeCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'iconClass': iconClass,
+      'imageUrl': imageUrl,
+      'placeCount': placeCount,
+    };
+  }
+}
+

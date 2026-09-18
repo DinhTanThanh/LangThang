@@ -987,6 +987,11 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     setState(() {
                       _filteredPlaces[index] = place.copyWith(isSaved: saved);
                     });
+                    if (saved) {
+                      PlaceApiService().savePlace(place.id, place: place);
+                    } else {
+                      PlaceApiService().unsavePlace(place.id);
+                    }
                   },
                 );
               },
@@ -1045,6 +1050,11 @@ class DestinationsScreenState extends State<DestinationsScreen> {
             setState(() {
               _filteredPlaces[index] = place.copyWith(isSaved: saved);
             });
+            if (saved) {
+              PlaceApiService().savePlace(place.id, place: place);
+            } else {
+              PlaceApiService().unsavePlace(place.id);
+            }
           },
         );
       },

@@ -7,6 +7,7 @@ import 'food/food_screen.dart';
 import 'itineraries/itineraries_screen.dart';
 import 'blog/blog_screen.dart';
 import 'profile/profile_screen.dart';
+import '../widgets/common/recent_visited_floating_dock.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   final int initialIndex;
@@ -58,9 +59,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: pages,
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: pages,
+          ),
+          RecentVisitedFloatingDock(
+            bottomMargin: 16,
+            onOpenProfile: () => _onTabTapped(6),
+          ),
+        ],
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(

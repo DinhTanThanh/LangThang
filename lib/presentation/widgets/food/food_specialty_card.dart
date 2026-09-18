@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../data/models/food_model.dart';
 import '../../../data/models/place_model.dart';
 import '../../../data/mock/mock_data.dart';
+import '../../../data/services/favorite_api_service.dart';
 import '../../screens/destinations/place_detail_screen.dart';
 
 class FoodSpecialtyCard extends StatefulWidget {
@@ -28,6 +29,22 @@ class _FoodSpecialtyCardState extends State<FoodSpecialtyCard> {
   int _activeImageIndex = 0;
   bool _isSaved = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkSaved();
+  }
+
+  int get _numericFoodId {
+    return int.tryParse(widget.food.id.replaceAll(RegExp(r'\D'), '')) ??
+        (widget.food.id.hashCode.abs() % 100000);
+  }
+
+  Future<void> _checkSaved() async {
+    final saved = await FavoriteApiService().isFavorite(2, _numericFoodId);
+    if (mounted) setState(() => _isSaved = saved);
+  }
+
   void _prevImage() {
     final media = widget.food.allMediaUrls;
     if (media.length <= 1) return;
@@ -45,9 +62,30 @@ class _FoodSpecialtyCardState extends State<FoodSpecialtyCard> {
   }
 
   void _toggleSave() {
+    final nextSaved = !_isSaved;
     setState(() {
-      _isSaved = !_isSaved;
+      _isSaved = nextSaved;
     });
+
+    final foodId = _numericFoodId;
+    if (nextSaved) {
+      FavoriteApiService().addFavorite(
+        targetType: 2, // Food
+        targetId: foodId,
+        title: widget.food.name,
+        subtitle: widget.food.region,
+        coverImg: widget.food.imageUrl,
+        categoryTag: widget.food.type,
+        rating: widget.food.rating,
+        price: widget.food.priceRange,
+      );
+    } else {
+      FavoriteApiService().removeFavorite(
+        targetType: 2,
+        targetId: foodId,
+      );
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(

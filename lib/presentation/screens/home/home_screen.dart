@@ -4,13 +4,18 @@ import '../../../data/models/place_model.dart';
 import '../../../data/models/place_filter_dto.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../../data/services/favorite_api_service.dart';
+import '../../../data/services/recent_history_service.dart';
 import '../../../data/services/auth_service.dart';
 import '../../widgets/home/region_showcase_card.dart';
 import '../../widgets/home/collection_track_section.dart';
 import '../../widgets/home/top_rated_places_section.dart';
+import '../../widgets/home/place_type_quick_nav_section.dart';
 import '../destinations/destinations_screen.dart';
 import '../destinations/place_detail_screen.dart';
 import '../destinations/region_screen.dart';
+import '../chat/chat_inbox_screen.dart';
+import '../../../data/services/chat_api_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateTab;
@@ -31,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Data States
   List<CategoryDto> _categories = [];
+  List<PlaceTypeDto> _placeTypes = [];
   List<CollectionDto> _featuredCollections = [];
   List<RegionDto> _regions = [];
   List<PlaceModel> _topRatedPlaces = [];
@@ -83,9 +89,10 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       } catch (_) {}
 
-      // 1. Fetch filter options, categories, collections, and regions in parallel
+      // 1. Fetch filter options, categories, place types, collections, and regions in parallel
       final filterOptionsFuture = _placeApiService.getFilterOptions();
       final categoriesFuture = _placeApiService.getCategories();
+      final placeTypesFuture = _placeApiService.getPlaceTypes();
       final collectionsFuture = _placeApiService.getFeaturedCollections(count: 6);
       final regionsFuture = _placeApiService.getRegions();
       final topRatedFuture = _placeApiService.searchPlaces(
@@ -94,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final filterOptionsRes = await filterOptionsFuture;
       final categoriesRes = await categoriesFuture;
+      final placeTypesRes = await placeTypesFuture;
       final collectionsRes = await collectionsFuture;
       final regionsRes = await regionsFuture;
       final topRatedRes = await topRatedFuture;
@@ -106,6 +114,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (categoriesRes.data != null) {
         _categories = categoriesRes.data!;
+      }
+
+      if (placeTypesRes.data != null && placeTypesRes.data!.isNotEmpty) {
+        _placeTypes = placeTypesRes.data!;
+      } else if (_categories.isNotEmpty) {
+        _placeTypes = _categories
+            .map((c) => PlaceTypeDto(
+                  id: c.id,
+                  name: c.name,
+                  iconClass: c.iconClass,
+                  placeCount: c.placeCount,
+                ))
+            .toList();
       }
 
       if (regionsRes.data != null) {
@@ -196,6 +217,18 @@ class _HomeScreenState extends State<HomeScreen> {
         }
         _regions = populatedRegions;
       }
+
+      // 4. Đồng bộ trạng thái đã lưu từ FavoriteApiService
+      final savedIds = await FavoriteApiService().getFavoritePlaceIds();
+      _topRatedPlaces = _topRatedPlaces.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList();
+      _featuredCollections = _featuredCollections.map((col) {
+        return col.copyWith(
+          places: col.places.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList(),
+        );
+      }).toList();
+
+      // 5. Nạp danh sách đã xem gần đây
+      RecentHistoryService().getRecentVisitedPlaces();
     } catch (e) {
       debugPrint('[HomeScreen] Error loading real data: $e');
     }
@@ -203,6 +236,23 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _refreshSavedFavorites() async {
+    try {
+      final savedIds = await FavoriteApiService().getFavoritePlaceIds();
+      RecentHistoryService().getRecentVisitedPlaces();
+      if (mounted) {
+        setState(() {
+          _topRatedPlaces = _topRatedPlaces.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList();
+          _featuredCollections = _featuredCollections.map((col) {
+            return col.copyWith(
+              places: col.places.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList(),
+            );
+          }).toList();
+        });
+      }
+    } catch (_) {}
   }
 
   void _navigateToSearch({String? query, String? region, String? category}) {
@@ -219,16 +269,17 @@ class _HomeScreenState extends State<HomeScreen> {
           initialCategory: category,
         ),
       ),
-    );
+    ).then((_) => _refreshSavedFavorites());
   }
 
-  void _navigateToPlaceDetail(PlaceModel place) {
-    Navigator.push(
+  void _navigateToPlaceDetail(PlaceModel place) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PlaceDetailScreen(place: place),
       ),
     );
+    _refreshSavedFavorites();
   }
 
   void _navigateToRegionDetail(RegionDto region) {
@@ -282,6 +333,43 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          StreamBuilder<int>(
+            stream: ChatApiService().onTotalUnreadCountChanged,
+            builder: (context, snapshot) {
+              final unread = snapshot.data ?? ChatApiService().getTotalUnreadCount();
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.textPrimary),
+                    tooltip: 'Tin nhắn',
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ChatInboxScreen()),
+                      );
+                    },
+                  ),
+                  if (unread > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEF4444),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          '$unread',
+                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_none_rounded, color: AppColors.textPrimary),
             onPressed: () {
@@ -340,7 +428,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 20),
 
                     // 2. PLACE TYPE QUICK NAV (Matching Share_Locations PlaceTypeQuickNav.tsx)
-                    _buildPlaceTypeQuickNav(),
+                    PlaceTypeQuickNavSection(
+                      placeTypes: _placeTypes,
+                      onViewAllTap: () => _navigateToSearch(),
+                      onPlaceTypeTap: (pt) => _navigateToSearch(category: pt.name),
+                    ),
 
                     const SizedBox(height: 24),
 
@@ -496,14 +588,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                   );
                                 },
                               ),
-                            ),
-                          ],
-                        ),
+                             ),
+                           ],
+                         ),
 
-                        const Divider(
-                            height: 12, thickness: 0.8, color: Color(0xFFE2E8F0)),
+                        const Divider(height: 12, thickness: 1, color: Color(0xFFF1F5F9)),
 
-                        // Filters row + Submit button
+                        // Filters row
                         Row(
                           children: [
                             // Region dropdown
@@ -527,7 +618,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         SizedBox(width: 4),
                                         Expanded(
                                           child: Text(
-                                            'Vùng miền',
+                                            'Tất cả miền',
                                             style: TextStyle(
                                                 fontSize: 11,
                                                 color: Color(0xFF475569),
@@ -565,7 +656,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
 
-                            const SizedBox(width: 6),
+                            const SizedBox(width: 8),
 
                             // Category dropdown
                             Expanded(
@@ -588,7 +679,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         SizedBox(width: 4),
                                         Expanded(
                                           child: Text(
-                                            'Danh mục',
+                                            'Tất cả danh mục',
                                             style: TextStyle(
                                                 fontSize: 11,
                                                 color: Color(0xFF475569),
@@ -625,46 +716,52 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ),
                             ),
-
-                            const SizedBox(width: 6),
-
-                            // Submit Button
-                            ElevatedButton(
-                              onPressed: () {
-                                _navigateToSearch(
-                                  query: _heroSearchController.text.trim().isNotEmpty
-                                      ? _heroSearchController.text.trim()
-                                      : null,
-                                  region: _selectedHeroRegion.isNotEmpty
-                                      ? _selectedHeroRegion
-                                      : null,
-                                  category: _selectedHeroCategory.isNotEmpty
-                                      ? _selectedHeroCategory
-                                      : null,
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                minimumSize: const Size(0, 36),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10)),
-                              ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.explore_rounded, size: 14),
-                                  SizedBox(width: 4),
-                                  Text('Tìm',
-                                      style: TextStyle(
-                                          fontSize: 12, fontWeight: FontWeight.bold)),
-                                ],
-                              ),
-                            ),
                           ],
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // Submit Button matching Web HeroBanner.tsx
+                        SizedBox(
+                          width: double.infinity,
+                          height: 42,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              _navigateToSearch(
+                                query: _heroSearchController.text.trim().isNotEmpty
+                                    ? _heroSearchController.text.trim()
+                                    : null,
+                                region: _selectedHeroRegion.isNotEmpty
+                                    ? _selectedHeroRegion
+                                    : null,
+                                category: _selectedHeroCategory.isNotEmpty
+                                    ? _selectedHeroCategory
+                                    : null,
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF004F32),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.explore_rounded, size: 16),
+                                SizedBox(width: 6),
+                                Text(
+                                  'Khám phá ngay',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -716,29 +813,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 16),
-
-                  // 4-item Stats Bar (Matching Web HeroBanner.tsx)
-                  Container(
-                    padding: const EdgeInsets.only(top: 14),
-                    decoration: const BoxDecoration(
-                      border: Border(top: BorderSide(color: Color(0x26FFFFFF))),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildHeroStat('63+', 'Tỉnh thành\ntoàn quốc',
-                            const Color(0xFFFDBA74)),
-                        _buildHeroStat('1,200+', 'Địa điểm &\nMón ngon',
-                            const Color(0xFF34D399)),
-                        _buildHeroStat('100%', 'Kinh nghiệm\nthực tế',
-                            const Color(0xFFFCD34D)),
-                        _buildHeroStat('50k+', 'Cộng đồng\nyêu du lịch',
-                            const Color(0xFF38BDF8)),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -746,189 +820,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildHeroStat(String value, String label, Color color) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.5,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.75),
-            fontSize: 9.5,
-            height: 1.2,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // =========================================================================
-  // 2. PLACE TYPE QUICK NAV (Matching Share_Locations PlaceTypeQuickNav.tsx)
-  // =========================================================================
-  Widget _buildPlaceTypeQuickNav() {
-    if (_categories.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      color: Colors.white,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                const Text(
-                  'Bạn đang tìm kiếm điều gì?',
-                  style: TextStyle(
-                    fontSize: 19,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF0F172A),
-                    letterSpacing: -0.4,
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => _navigateToSearch(),
-                  child: const Row(
-                    children: [
-                      Text(
-                        'Xem tất cả',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF004F32),
-                        ),
-                      ),
-                      SizedBox(width: 4),
-                      Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF004F32)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          // Horizontal scroll of Place Types with image thumbnail & gradient overlay
-          SizedBox(
-            height: 105,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _categories.length,
-              separatorBuilder: (context, index) => const SizedBox(width: 12),
-              itemBuilder: (context, index) {
-                final cat = _categories[index];
-                final catImageUrl = _getCategoryThumbnail(cat.name);
-
-                return GestureDetector(
-                  onTap: () => _navigateToSearch(category: cat.name),
-                  child: Container(
-                    width: 140,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.network(
-                            catImageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(
-                              color: const Color(0xFF004F32),
-                            ),
-                          ),
-                          // Dark gradient overlay matching Share_Locations
-                          Container(
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.bottomCenter,
-                                end: Alignment.topCenter,
-                                colors: [
-                                  Color(0xEB020617),
-                                  Color(0x66020617),
-                                  Colors.transparent,
-                                ],
-                                stops: [0.0, 0.6, 1.0],
-                              ),
-                            ),
-                          ),
-                          // Category Name at bottom
-                          Positioned(
-                            bottom: 8,
-                            left: 8,
-                            right: 8,
-                            child: Text(
-                              cat.name,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w800,
-                                height: 1.25,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _getCategoryThumbnail(String name) {
-    final lower = name.toLowerCase();
-    if (lower.contains('thiên nhiên') || lower.contains('cảnh quan')) {
-      return 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=400&auto=format&fit=crop';
-    }
-    if (lower.contains('di tích') || lower.contains('lịch sử')) {
-      return 'https://images.unsplash.com/photo-1596394516093-501ba68a0ba6?q=80&w=400&auto=format&fit=crop';
-    }
-    if (lower.contains('ẩm thực') || lower.contains('quán ăn') || lower.contains('cafe')) {
-      return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?q=80&w=400&auto=format&fit=crop';
-    }
-    if (lower.contains('biển') || lower.contains('nghỉ dưỡng') || lower.contains('resort')) {
-      return 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=400&auto=format&fit=crop';
-    }
-    if (lower.contains('vui chơi') || lower.contains('giải trí')) {
-      return 'https://images.unsplash.com/photo-1513151233558-d860c5398176?q=80&w=400&auto=format&fit=crop';
-    }
-    if (lower.contains('văn hóa') || lower.contains('nghệ thuật') || lower.contains('làng nghề')) {
-      return 'https://images.unsplash.com/photo-1528127269322-539801943592?q=80&w=400&auto=format&fit=crop';
-    }
-    return 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=400&auto=format&fit=crop';
   }
 
   // =========================================================================
