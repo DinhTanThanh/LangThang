@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/place_model.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../../data/services/favorite_api_service.dart';
 import '../../screens/destinations/place_detail_screen.dart';
 
 class TopRatedPlacesSection extends StatefulWidget {
@@ -21,6 +22,28 @@ class TopRatedPlacesSection extends StatefulWidget {
 
 class _TopRatedPlacesSectionState extends State<TopRatedPlacesSection> {
   final Set<int> _savedIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedIds();
+  }
+
+  @override
+  void didUpdateWidget(covariant TopRatedPlacesSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _loadSavedIds();
+  }
+
+  Future<void> _loadSavedIds() async {
+    final ids = await FavoriteApiService().getFavoritePlaceIds();
+    if (mounted) {
+      setState(() {
+        _savedIds.clear();
+        _savedIds.addAll(ids);
+      });
+    }
+  }
 
   void _toggleSave(PlaceModel place) async {
     final isSaved = _savedIds.contains(place.id);
@@ -46,7 +69,7 @@ class _TopRatedPlacesSectionState extends State<TopRatedPlacesSection> {
 
     try {
       if (!isSaved) {
-        await PlaceApiService().savePlace(place.id);
+        await PlaceApiService().savePlace(place.id, place: place);
       } else {
         await PlaceApiService().unsavePlace(place.id);
       }

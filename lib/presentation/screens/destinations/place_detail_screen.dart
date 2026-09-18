@@ -5,8 +5,10 @@ import '../../../data/models/place_filter_dto.dart';
 import '../../../data/models/review_model.dart';
 import '../../../data/services/place_api_service.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/recent_history_service.dart';
 import '../../widgets/mapbox_interactive_map.dart';
 import '../../widgets/review/place_detail_reviews_section.dart';
+import '../../widgets/common/recent_visited_floating_dock.dart';
 import '../auth/login_screen.dart';
 import '../itineraries/itineraries_screen.dart';
 import 'map_directions_screen.dart';
@@ -53,12 +55,14 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     _fetchPlaceDetail();
     _fetchRelatedPlaces();
     _fetchReviews();
+    RecentHistoryService().recordAccessHistory(widget.place);
   }
 
   Future<void> _fetchPlaceDetail() async {
     try {
       final res = await PlaceApiService().getPlaceDetail(widget.place.id);
       if (mounted && res.data != null) {
+        RecentHistoryService().recordAccessHistory(res.data!);
         setState(() {
           _place = res.data!;
           final fetchedMedia = _place.mediaUrls.where((u) => u.trim().isNotEmpty).toList();
@@ -183,7 +187,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
     try {
       final res = targetState
-          ? await PlaceApiService().savePlace(_place.id)
+          ? await PlaceApiService().savePlace(_place.id, place: _place)
           : await PlaceApiService().unsavePlace(_place.id);
 
       if (!mounted) return;
@@ -270,54 +274,65 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Gallery Component
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              child: _buildGallery(allImgs),
-            ),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Gallery Component
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: _buildGallery(allImgs),
+                ),
 
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 1. Header Overview & Actions
-                  _buildHeaderOverview(place, totalReviews),
-                  const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 1. Header Overview & Actions
+                      _buildHeaderOverview(place, totalReviews),
+                      const SizedBox(height: 16),
 
-                  // 2. Overview Card: Description & Highlights & Amenities
-                  _buildOverviewCard(place),
-                  const SizedBox(height: 16),
+                      // 2. Overview Card: Description & Highlights & Amenities
+                      _buildOverviewCard(place),
+                      const SizedBox(height: 16),
 
-                  // 3. Contact & Map Sidebar
-                  _buildSidebarCard(place),
-                  const SizedBox(height: 16),
+                      // 3. Contact & Map Sidebar
+                      _buildSidebarCard(place),
+                      const SizedBox(height: 16),
 
-                  // 4. Reviews & Ratings Section (Matching Share_Locations PlaceDetailReviews.tsx)
-                  PlaceDetailReviewsSection(
-                    placeId: place.id,
-                    placeName: place.name,
-                    avgRating: _currentRating,
-                    totalReviews: totalReviews,
+                      // 4. Reviews & Ratings Section (Matching Share_Locations PlaceDetailReviews.tsx)
+                      PlaceDetailReviewsSection(
+                        placeId: place.id,
+                        placeName: place.name,
+                        avgRating: _currentRating,
+                        totalReviews: totalReviews,
+                      ),
+
+                      // 5. Related Places
+                      if (_relatedPlaces.isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        _buildRelatedSection(),
+                      ],
+
+                      const SizedBox(height: 80),
+                    ],
                   ),
-
-                  // 5. Related Places
-                  if (_relatedPlaces.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    _buildRelatedSection(),
-                  ],
-
-                  const SizedBox(height: 80),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+
+          // Floating Dock: Đã xem gần đây
+          RecentVisitedFloatingDock(
+            onOpenProfile: () {
+              Navigator.pop(context);
+            },
+          ),
+        ],
       ),
 
       // Sticky Bottom Bar

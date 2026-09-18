@@ -422,7 +422,11 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(_tokenKey);
 
-    // Call backend logout endpoint if valid token
+    // 1. Luôn xóa sạch token & thông tin người dùng khỏi local storage trước
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_userKey);
+
+    // 2. Gửi yêu cầu đăng xuất lên backend nếu có token
     try {
       if (token != null && token.isNotEmpty && !token.startsWith('google_session_token_')) {
         final url = Uri.parse('${ApiConstants.baseUrl}${ApiConstants.logout}');
@@ -432,18 +436,16 @@ class AuthService {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $token',
           },
-        ).timeout(const Duration(seconds: 4));
+        ).timeout(const Duration(seconds: 3));
       }
     } catch (_) {}
 
-    // Sign out from Google session
+    // 3. Đăng xuất Google an toàn với timeout và kiểm tra nền tảng (tránh treo trên Windows Desktop)
     try {
-      final googleSignIn = GoogleSignIn();
-      await googleSignIn.signOut();
+      if (kIsWeb || (!kIsWeb && (Platform.isAndroid || Platform.isIOS))) {
+        final googleSignIn = GoogleSignIn();
+        await googleSignIn.signOut().timeout(const Duration(seconds: 2));
+      }
     } catch (_) {}
-
-    // Clear local storage
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_userKey);
   }
 }

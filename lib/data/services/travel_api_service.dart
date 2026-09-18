@@ -12,6 +12,8 @@ import '../models/collection_model.dart';
 import '../mock/mock_data.dart';
 import 'auth_service.dart';
 import 'place_api_service.dart';
+import 'itinerary_api_service.dart';
+import 'blog_api_service.dart';
 
 class TravelApiService {
   // Singleton pattern
@@ -157,135 +159,72 @@ class TravelApiService {
     return list;
   }
 
-  /// Lấy danh sách lịch trình gợi ý (Gọi API hoặc Fallback)
+  /// Lấy danh sách lịch trình từ API database backend
   Future<List<ItineraryModel>> getItineraries({
     String? duration,
     String? keyword,
     String? region,
+    String? budget,
+    int page = 1,
+    int pageSize = 50,
   }) async {
-    try {
-      final queryParams = <String, String>{};
-      if (duration != null && duration.isNotEmpty && duration != 'all') {
-        queryParams['duration'] = duration;
-      }
-      if (keyword != null && keyword.trim().isNotEmpty) {
-        queryParams['keyword'] = keyword.trim();
-      }
-      if (region != null && region.isNotEmpty && region != 'all') {
-        queryParams['region'] = region;
-      }
-
-      final baseUri = Uri.parse('${ApiConstants.baseUrl}/api/v1/itineraries');
-      final uri = queryParams.isEmpty ? baseUri : baseUri.replace(queryParameters: queryParams);
-
-      final token = await AuthService().getAccessToken();
-      final headers = <String, String>{
-        'Accept': 'application/json',
-      };
-      if (token != null && token.isNotEmpty) {
-        headers['Authorization'] = 'Bearer $token';
-      }
-
-      final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 6));
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        final dynamic items = decoded is Map<String, dynamic> ? (decoded['data'] ?? decoded['items']) : decoded;
-        if (items is List && items.isNotEmpty) {
-          return items.map((e) => ItineraryModel.fromJson(e as Map<String, dynamic>)).toList();
-        }
-      }
-    } catch (_) {}
-
-    // Fallback filter
-    List<ItineraryModel> list = List.from(MockData.itineraries);
-
-    if (duration != null && duration != 'all') {
-      if (duration == '1_day') {
-        list = list.where((i) => i.daysCount == 1 || i.duration.contains('1 Ngày')).toList();
-      } else if (duration == '2d1n') {
-        list = list.where((i) => i.daysCount == 2 || i.duration.contains('2 Ngày')).toList();
-      } else if (duration == '3d2n') {
-        list = list.where((i) => i.daysCount == 3 || i.duration.contains('3 Ngày')).toList();
-      } else if (duration == '4d3n') {
-        list = list.where((i) => i.daysCount >= 4 || i.duration.contains('4 Ngày')).toList();
-      }
-    }
-
-    if (keyword != null && keyword.trim().isNotEmpty) {
-      final q = keyword.trim().toLowerCase();
-      list = list.where((i) {
-        return i.title.toLowerCase().contains(q) ||
-            i.destination.toLowerCase().contains(q) ||
-            (i.overview?.toLowerCase().contains(q) ?? false) ||
-            i.days.any((d) => d.stops.any((s) => s.location.toLowerCase().contains(q) || s.activity.toLowerCase().contains(q)));
-      }).toList();
-    }
-
-    if (region != null && region != 'all') {
-      list = list.where((i) => i.region.toLowerCase() == region.toLowerCase()).toList();
-    }
-
-    return list;
+    return ItineraryApiService().getItineraries(
+      duration: duration,
+      keyword: keyword,
+      region: region,
+      budget: budget,
+      page: page,
+      pageSize: pageSize,
+    );
   }
 
-  /// Lưu lịch trình
-  Future<bool> saveItinerary(int id) async {
-    try {
-      final token = await AuthService().getAccessToken();
-      if (token == null || token.isEmpty) return false;
+  /// Lấy chi tiết lịch trình từ database
+  Future<ItineraryModel?> getItineraryDetail(int id) async {
+    return ItineraryApiService().getItineraryDetail(id);
+  }
 
-      final uri = Uri.parse('${ApiConstants.baseUrl}/api/v1/itineraries/$id/save');
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 8));
-
-      return response.statusCode >= 200 && response.statusCode < 300;
-    } catch (_) {
-      return true; // Optimistic
-    }
+  /// Lưu hoặc bỏ lưu lịch trình
+  Future<bool> saveItinerary(int id, {ItineraryModel? itinerary, bool isSaving = true}) async {
+    return ItineraryApiService().saveItinerary(id, itinerary: itinerary, isSaving: isSaving);
   }
 
   /// Lấy danh sách bài viết blog
   Future<List<BlogModel>> getBlogs({
     String? category,
     String? keyword,
+    String? region,
+    String? province,
     int page = 1,
-    int pageSize = 20,
+    int pageSize = 50,
   }) async {
-    try {
-      final queryParams = <String, String>{
-        'Page': page.toString(),
-        'PageSize': pageSize.toString(),
-      };
-      if (category != null && category.isNotEmpty && category != 'all') {
-        queryParams['Category'] = category;
-      }
-      if (keyword != null && keyword.trim().isNotEmpty) {
-        queryParams['Keyword'] = keyword.trim();
-      }
+    return BlogApiService().getBlogs(
+      category: category,
+      keyword: keyword,
+      region: region,
+      province: province,
+      page: page,
+      pageSize: pageSize,
+    );
+  }
 
-      final baseUri = Uri.parse('${ApiConstants.baseUrl}/api/v1/blogs');
-      final uri = baseUri.replace(queryParameters: queryParams);
-      final response = await http
-          .get(uri, headers: {'Accept': 'application/json'})
-          .timeout(const Duration(seconds: 6));
+  /// Lấy bài viết cẩm nang nổi bật
+  Future<BlogModel?> getFeaturedBlog() async {
+    return BlogApiService().getFeaturedBlog();
+  }
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        final dynamic items = decoded is Map<String, dynamic>
-            ? (decoded['data'] ?? decoded['items'])
-            : decoded;
-        if (items is List && items.isNotEmpty) {
-          return items.map((e) => BlogModel.fromJson(e as Map<String, dynamic>)).toList();
-        }
-      }
-    } catch (_) {}
+  /// Lấy chi tiết bài viết cẩm nang
+  Future<BlogModel?> getBlogDetail(dynamic idOrSlug) async {
+    return BlogApiService().getBlogDetail(idOrSlug);
+  }
 
-    return MockData.blogs;
+  /// Thích / Bỏ thích bài viết cẩm nang
+  Future<bool> toggleBlogLike(dynamic id) async {
+    return BlogApiService().toggleLike(id);
+  }
+
+  /// Lưu / Bỏ lưu bài viết cẩm nang
+  Future<bool> toggleBlogSave(dynamic id) async {
+    return BlogApiService().toggleSave(id);
   }
 
   /// Lấy danh sách địa điểm khám phá tìm kiếm & lọc
