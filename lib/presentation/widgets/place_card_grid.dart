@@ -18,22 +18,6 @@ class PlaceCardGrid extends StatefulWidget {
 }
 
 class _PlaceCardGridState extends State<PlaceCardGrid> {
-  late bool _isSaved;
-
-  @override
-  void initState() {
-    super.initState();
-    _isSaved = widget.place.isSaved;
-  }
-
-  @override
-  void didUpdateWidget(covariant PlaceCardGrid oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.place.isSaved != widget.place.isSaved) {
-      _isSaved = widget.place.isSaved;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final locationText = widget.place.province.isNotEmpty
@@ -91,39 +75,6 @@ class _PlaceCardGridState extends State<PlaceCardGrid> {
                           Icons.location_on_outlined,
                           size: 28,
                           color: Color(0xFFCBD5E1),
-                        ),
-                      ),
-                    ),
-
-                    Positioned(
-                      top: 6,
-                      right: 6,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _isSaved = !_isSaved);
-                          widget.onToggleSave?.call(_isSaved);
-                        },
-                        child: Container(
-                          width: 26,
-                          height: 26,
-                          decoration: BoxDecoration(
-                            color: _isSaved
-                                ? const Color(0xFFF43F5E)
-                                : Colors.white.withValues(alpha: 0.9),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.08),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                          child: Icon(
-                            _isSaved ? Icons.favorite : Icons.favorite_border,
-                            color: _isSaved ? Colors.white : const Color(0xFF475569),
-                            size: 13,
-                          ),
                         ),
                       ),
                     ),

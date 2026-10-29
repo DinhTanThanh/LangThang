@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../../data/models/blog_model.dart';
 import '../../screens/blog/blog_detail_screen.dart';
+import '../../screens/profile/user_profile_screen.dart';
 
 class BlogDetailModal extends StatelessWidget {
   final BlogModel blog;
@@ -124,36 +126,50 @@ class BlogDetailModal extends StatelessWidget {
                   const SizedBox(height: 10),
 
                   // Author Info
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 14,
-                        backgroundColor: const Color(0xFF059669),
-                        backgroundImage: blog.authorAvatar.isNotEmpty
-                            ? NetworkImage(blog.authorAvatar)
-                            : null,
-                        child: blog.authorAvatar.isEmpty
-                            ? Text(
-                                blog.authorName.isNotEmpty ? blog.authorName[0].toUpperCase() : 'A',
-                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            blog.authorName,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF111827)),
-                          ),
-                          Text(
-                            '${blog.publishedDate} • ${blog.readTimeMinutes} phút đọc',
-                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B7280)),
-                          ),
-                        ],
-                      ),
-                    ],
+                  InkWell(
+                    onTap: () {
+                      Navigator.pop(context); // close modal first
+                      UserProfileScreen.navigate(
+                        context,
+                        userId: blog.author.id.isNotEmpty ? blog.author.id : null,
+                        userName: blog.authorName,
+                        userAvatar: blog.authorAvatar,
+                        userBio: blog.author.bio,
+                        userRank: blog.author.role,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 14,
+                          backgroundColor: const Color(0xFF059669),
+                          backgroundImage: blog.authorAvatar.isNotEmpty
+                              ? NetworkImage(blog.authorAvatar)
+                              : null,
+                          child: blog.authorAvatar.isEmpty
+                              ? Text(
+                                  blog.authorName.isNotEmpty ? blog.authorName[0].toUpperCase() : 'A',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              blog.authorName,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF111827)),
+                            ),
+                            Text(
+                              '${blog.publishedDate} • ${blog.readTimeMinutes} phút đọc',
+                              style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B7280)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 14),
 
@@ -163,16 +179,36 @@ class BlogDetailModal extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                       child: AspectRatio(
                         aspectRatio: 16 / 9,
-                        child: Image.network(
-                          blog.imageUrl,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            color: const Color(0xFF059669),
-                            child: const Center(
-                              child: Icon(Icons.menu_book_rounded, color: Colors.white54, size: 36),
+                        child: () {
+                          final url = blog.imageUrl.trim();
+                          if (url.startsWith('data:image')) {
+                            try {
+                              final commaIdx = url.indexOf(',');
+                              final b64 = commaIdx != -1 ? url.substring(commaIdx + 1) : url;
+                              final bytes = base64Decode(b64);
+                              return Image.memory(
+                                bytes,
+                                fit: BoxFit.cover,
+                                errorBuilder: (ctx, err, stack) => Container(
+                                  color: const Color(0xFF059669),
+                                  child: const Center(
+                                    child: Icon(Icons.menu_book_rounded, color: Colors.white54, size: 36),
+                                  ),
+                                ),
+                              );
+                            } catch (_) {}
+                          }
+                          return Image.network(
+                            url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              color: const Color(0xFF059669),
+                              child: const Center(
+                                child: Icon(Icons.menu_book_rounded, color: Colors.white54, size: 36),
+                              ),
                             ),
-                          ),
-                        ),
+                          );
+                        }(),
                       ),
                     ),
                   const SizedBox(height: 16),

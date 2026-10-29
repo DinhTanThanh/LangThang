@@ -10,6 +10,8 @@ class VisitLogItemModel {
   final String coverImg;
   final double? lat;
   final double? lng;
+  final String? note;
+  final int? rating;
   final String createdAt;
 
   const VisitLogItemModel({
@@ -23,6 +25,8 @@ class VisitLogItemModel {
     this.coverImg = '',
     this.lat,
     this.lng,
+    this.note,
+    this.rating,
     this.createdAt = '',
   });
 
@@ -38,6 +42,8 @@ class VisitLogItemModel {
       coverImg: json['coverImg']?.toString() ?? '',
       lat: (json['lat'] as num?)?.toDouble(),
       lng: (json['lng'] as num?)?.toDouble(),
+      note: json['note']?.toString(),
+      rating: json['rating'] is num ? (json['rating'] as num).toInt() : int.tryParse(json['rating']?.toString() ?? ''),
       createdAt: json['createdAt']?.toString() ?? '',
     );
   }
@@ -53,6 +59,8 @@ class VisitLogItemModel {
     String? coverImg,
     double? lat,
     double? lng,
+    String? note,
+    int? rating,
     String? createdAt,
   }) {
     return VisitLogItemModel(
@@ -66,6 +74,8 @@ class VisitLogItemModel {
       coverImg: coverImg ?? this.coverImg,
       lat: lat ?? this.lat,
       lng: lng ?? this.lng,
+      note: note ?? this.note,
+      rating: rating ?? this.rating,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -82,6 +92,8 @@ class VisitLogItemModel {
       'coverImg': coverImg,
       'lat': lat,
       'lng': lng,
+      'note': note,
+      'rating': rating,
       'createdAt': createdAt,
     };
   }
@@ -155,6 +167,10 @@ class UserCommentItemModel {
   final String content;
   final String? parentAuthor;
   final String createdAt;
+  final String? targetType; // 'blog', 'review', 'place'
+  final String? targetTitle;
+  final String? targetImageUrl;
+  final String? targetSummary;
 
   const UserCommentItemModel({
     required this.id,
@@ -165,18 +181,44 @@ class UserCommentItemModel {
     required this.content,
     this.parentAuthor,
     this.createdAt = '',
+    this.targetType,
+    this.targetTitle,
+    this.targetImageUrl,
+    this.targetSummary,
   });
 
+  String get displayTitle {
+    if (targetTitle != null && targetTitle!.isNotEmpty) return targetTitle!;
+    if (placeName.isNotEmpty) return placeName;
+    return 'Bài viết / Địa điểm du lịch';
+  }
+
+  String get displayImage {
+    if (targetImageUrl != null && targetImageUrl!.isNotEmpty) return targetImageUrl!;
+    if (placeThumb.isNotEmpty) return placeThumb;
+    return 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&h=350&fit=crop';
+  }
+
   factory UserCommentItemModel.fromJson(Map<String, dynamic> json) {
+    final thumb = json['placeThumb']?.toString() ??
+        json['coverImg']?.toString() ??
+        json['imageUrl']?.toString() ??
+        json['targetImageUrl']?.toString() ??
+        '';
+
     return UserCommentItemModel(
       id: json['id'] is num ? (json['id'] as num).toInt() : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       reviewId: json['reviewId'] is num ? (json['reviewId'] as num).toInt() : null,
       placeId: json['placeId'] is num ? (json['placeId'] as num).toInt() : int.tryParse(json['placeId']?.toString() ?? '0') ?? 0,
-      placeName: json['placeName']?.toString() ?? '',
-      placeThumb: json['placeThumb']?.toString() ?? '',
+      placeName: json['placeName']?.toString() ?? json['title']?.toString() ?? '',
+      placeThumb: thumb,
       content: json['content']?.toString() ?? '',
-      parentAuthor: json['parentAuthor']?.toString(),
+      parentAuthor: json['parentAuthor']?.toString() ?? json['replyTo']?.toString(),
       createdAt: json['createdAt']?.toString() ?? '',
+      targetType: json['targetType']?.toString() ?? (json['reviewId'] != null ? 'review' : 'place'),
+      targetTitle: json['targetTitle']?.toString() ?? json['placeName']?.toString(),
+      targetImageUrl: thumb,
+      targetSummary: json['targetSummary']?.toString() ?? json['reviewContent']?.toString(),
     );
   }
 }
@@ -190,6 +232,7 @@ class UserBlogItemModel {
   final String excerpt;
   final int status; // 0: Bản nháp, 1: Đã xuất bản
   final String category;
+  final int? categoryId;
   final int readTimeMinutes;
   final int viewsCount;
   final int likesCount;
@@ -203,6 +246,7 @@ class UserBlogItemModel {
     this.excerpt = '',
     this.status = 1,
     this.category = 'Cẩm nang du lịch',
+    this.categoryId,
     this.readTimeMinutes = 5,
     this.viewsCount = 0,
     this.likesCount = 0,
@@ -218,6 +262,7 @@ class UserBlogItemModel {
       excerpt: json['excerpt']?.toString() ?? '',
       status: json['status'] is num ? (json['status'] as num).toInt() : int.tryParse(json['status']?.toString() ?? '1') ?? 1,
       category: json['categoryName']?.toString() ?? (json['category']?.toString() ?? 'Cẩm nang du lịch'),
+      categoryId: json['categoryId'] is num ? (json['categoryId'] as num).toInt() : int.tryParse(json['categoryId']?.toString() ?? ''),
       readTimeMinutes: json['readTimeMinutes'] is num ? (json['readTimeMinutes'] as num).toInt() : 5,
       viewsCount: json['viewsCount'] is num ? (json['viewsCount'] as num).toInt() : ((json['viewCount'] as num?)?.toInt() ?? 0),
       likesCount: json['likesCount'] is num ? (json['likesCount'] as num).toInt() : 0,
@@ -235,13 +280,18 @@ class ProposalItemModel {
   final String address;
   final String phone;
   final String website;
+  final double? latitude;
+  final double? longitude;
+  final double minPrice;
+  final double maxPrice;
   final String openingHours;
   final String priceRange;
   final String description;
   final String coverImg;
   final List<String> mediaUrls;
-  final int status; // 0: Đang chờ duyệt, 1: Đã chấp thuận, 2: Bị từ chối
+  final int status; // 0: Đang chờ duyệt, 1: Đã chấp thuận, 2: Bị từ chối, 3: Cần bổ sung
   final String? rejectReason;
+  final String? adminNote;
   final String createdAt;
   final int viewsCount;
   final int favoritesCount;
@@ -254,6 +304,10 @@ class ProposalItemModel {
     this.address = '',
     this.phone = '',
     this.website = '',
+    this.latitude,
+    this.longitude,
+    this.minPrice = 0,
+    this.maxPrice = 0,
     this.openingHours = '07:30 – 18:00',
     this.priceRange = 'Miễn phí',
     this.description = '',
@@ -261,6 +315,7 @@ class ProposalItemModel {
     this.mediaUrls = const [],
     this.status = 0,
     this.rejectReason,
+    this.adminNote,
     this.createdAt = '',
     this.viewsCount = 0,
     this.favoritesCount = 0,
@@ -273,6 +328,8 @@ class ProposalItemModel {
     }
 
     final cover = json['coverImg']?.toString() ?? (mediaList.isNotEmpty ? mediaList.first : '');
+    final minP = (json['minPrice'] is num) ? (json['minPrice'] as num).toDouble() : (double.tryParse(json['minPrice']?.toString() ?? '') ?? 0.0);
+    final maxP = (json['maxPrice'] is num) ? (json['maxPrice'] as num).toDouble() : (double.tryParse(json['maxPrice']?.toString() ?? '') ?? 0.0);
 
     return ProposalItemModel(
       id: json['id'] is num ? (json['id'] as num).toInt() : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
@@ -282,13 +339,18 @@ class ProposalItemModel {
       address: json['address']?.toString() ?? '',
       phone: json['phone']?.toString() ?? '',
       website: json['website']?.toString() ?? '',
+      latitude: json['latitude'] is num ? (json['latitude'] as num).toDouble() : double.tryParse(json['latitude']?.toString() ?? (json['lat']?.toString() ?? '')),
+      longitude: json['longitude'] is num ? (json['longitude'] as num).toDouble() : double.tryParse(json['longitude']?.toString() ?? (json['lng']?.toString() ?? '')),
+      minPrice: minP,
+      maxPrice: maxP,
       openingHours: json['openingHours']?.toString() ?? '07:30 – 18:00',
-      priceRange: json['minPrice'] != null ? '${json['minPrice']} - ${json['maxPrice'] ?? ""}' : 'Miễn phí',
+      priceRange: (minP > 0 || maxP > 0) ? '${minP.toInt()} - ${maxP.toInt()} VNĐ' : (json['priceRange']?.toString() ?? 'Miễn phí'),
       description: json['description']?.toString() ?? '',
       coverImg: cover,
       mediaUrls: mediaList.isNotEmpty ? mediaList : (cover.isNotEmpty ? [cover] : []),
       status: json['status'] is num ? (json['status'] as num).toInt() : int.tryParse(json['status']?.toString() ?? '0') ?? 0,
       rejectReason: json['rejectReason']?.toString(),
+      adminNote: json['adminNote']?.toString() ?? json['note']?.toString(),
       createdAt: json['createdAt']?.toString() ?? '',
       viewsCount: (json['viewsCount'] as num?)?.toInt() ?? 0,
       favoritesCount: (json['favoritesCount'] as num?)?.toInt() ?? 0,
@@ -304,6 +366,10 @@ class ProposalItemModel {
       'address': address,
       'phone': phone,
       'website': website,
+      'latitude': latitude,
+      'longitude': longitude,
+      'minPrice': minPrice,
+      'maxPrice': maxPrice,
       'openingHours': openingHours,
       'priceRange': priceRange,
       'description': description,
@@ -311,6 +377,7 @@ class ProposalItemModel {
       'mediaUrls': mediaUrls,
       'status': status,
       'rejectReason': rejectReason,
+      'adminNote': adminNote,
       'createdAt': createdAt,
       'viewsCount': viewsCount,
       'favoritesCount': favoritesCount,
@@ -362,3 +429,152 @@ class UserAccessHistoryItemModel {
     };
   }
 }
+
+/// Mô hình dữ liệu cho Hồ sơ người dùng công khai (Public User Profile - Matching Share_Locations)
+class PublicUserProfileModel {
+  final int id;
+  final String fullName;
+  final String? avatarUrl;
+  final String? coverUrl;
+  final String? bio;
+  final String? joinedDate;
+  final String rankLevel;
+  final int reputationScore;
+  final bool isCurrentUser;
+  final String friendStatus; // 'none', 'pending_sent', 'pending_received', 'accepted'
+  final int reviewCount;
+  final int visitLogCount;
+  final int tripCount;
+  final int blogCount;
+  final int proposalCount;
+
+  const PublicUserProfileModel({
+    required this.id,
+    required this.fullName,
+    this.avatarUrl,
+    this.coverUrl,
+    this.bio,
+    this.joinedDate,
+    this.rankLevel = 'Chuyên gia khám phá',
+    this.reputationScore = 1250,
+    this.isCurrentUser = false,
+    this.friendStatus = 'none',
+    this.reviewCount = 0,
+    this.visitLogCount = 0,
+    this.tripCount = 0,
+    this.blogCount = 0,
+    this.proposalCount = 0,
+  });
+
+  factory PublicUserProfileModel.fromJson(Map<String, dynamic> json) {
+    return PublicUserProfileModel(
+      id: json['id'] is num ? (json['id'] as num).toInt() : int.tryParse(json['id']?.toString() ?? '1') ?? 1,
+      fullName: json['fullName']?.toString() ?? (json['name']?.toString() ?? 'Người dùng'),
+      avatarUrl: json['avatarUrl']?.toString() ?? json['avatar']?.toString(),
+      coverUrl: json['coverUrl']?.toString() ?? json['coverImg']?.toString(),
+      bio: json['bio']?.toString() ?? 'Đam mê khám phá các cung đường và địa điểm mới trên khắp Việt Nam.',
+      joinedDate: json['joinedDate']?.toString() ?? 'Tháng 4, 2024',
+      rankLevel: json['rankLevel']?.toString() ?? 'Chuyên gia khám phá',
+      reputationScore: (json['reputationScore'] as num?)?.toInt() ?? 1250,
+      isCurrentUser: json['isCurrentUser'] as bool? ?? false,
+      friendStatus: json['friendStatus']?.toString() ?? 'none',
+      reviewCount: (json['reviewCount'] as num?)?.toInt() ?? 0,
+      visitLogCount: (json['visitLogCount'] as num?)?.toInt() ?? 0,
+      tripCount: (json['tripCount'] as num?)?.toInt() ?? 0,
+      blogCount: (json['blogCount'] as num?)?.toInt() ?? 0,
+      proposalCount: (json['proposalCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  PublicUserProfileModel copyWith({
+    int? id,
+    String? fullName,
+    String? avatarUrl,
+    String? coverUrl,
+    String? bio,
+    String? joinedDate,
+    String? rankLevel,
+    int? reputationScore,
+    bool? isCurrentUser,
+    String? friendStatus,
+    int? reviewCount,
+    int? visitLogCount,
+    int? tripCount,
+    int? blogCount,
+    int? proposalCount,
+  }) {
+    return PublicUserProfileModel(
+      id: id ?? this.id,
+      fullName: fullName ?? this.fullName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      coverUrl: coverUrl ?? this.coverUrl,
+      bio: bio ?? this.bio,
+      joinedDate: joinedDate ?? this.joinedDate,
+      rankLevel: rankLevel ?? this.rankLevel,
+      reputationScore: reputationScore ?? this.reputationScore,
+      isCurrentUser: isCurrentUser ?? this.isCurrentUser,
+      friendStatus: friendStatus ?? this.friendStatus,
+      reviewCount: reviewCount ?? this.reviewCount,
+      visitLogCount: visitLogCount ?? this.visitLogCount,
+      tripCount: tripCount ?? this.tripCount,
+      blogCount: blogCount ?? this.blogCount,
+      proposalCount: proposalCount ?? this.proposalCount,
+    );
+  }
+}
+
+/// Mô hình dữ liệu cho Chuyến đi của người dùng (User Trip)
+class UserTripItemModel {
+  final int id;
+  final String title;
+  final String? description;
+  final String? coverImageUrl;
+  final String? province;
+  final String? startDate;
+  final String? endDate;
+  final int durationDays;
+  final int nightsCount;
+  final double? estimatedBudget;
+  final int privacy;
+  final int status;
+  final int totalStopsCount;
+  final String createdAt;
+
+  const UserTripItemModel({
+    required this.id,
+    required this.title,
+    this.description,
+    this.coverImageUrl,
+    this.province,
+    this.startDate,
+    this.endDate,
+    this.durationDays = 1,
+    this.nightsCount = 0,
+    this.estimatedBudget,
+    this.privacy = 1,
+    this.status = 1,
+    this.totalStopsCount = 0,
+    this.createdAt = '',
+  });
+
+  factory UserTripItemModel.fromJson(Map<String, dynamic> json) {
+    return UserTripItemModel(
+      id: json['id'] is num ? (json['id'] as num).toInt() : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      title: json['title']?.toString() ?? 'Chuyến đi',
+      description: json['description']?.toString(),
+      coverImageUrl: json['coverImageUrl']?.toString() ?? json['coverImg']?.toString() ?? json['image']?.toString(),
+      province: json['province']?.toString(),
+      startDate: json['startDate']?.toString(),
+      endDate: json['endDate']?.toString(),
+      durationDays: (json['durationDays'] as num?)?.toInt() ?? 1,
+      nightsCount: (json['nightsCount'] as num?)?.toInt() ?? 0,
+      estimatedBudget: (json['estimatedBudget'] as num?)?.toDouble(),
+      privacy: (json['privacy'] as num?)?.toInt() ?? 1,
+      status: (json['status'] as num?)?.toInt() ?? 1,
+      totalStopsCount: (json['totalStopsCount'] as num?)?.toInt() ?? ((json['stopsCount'] as num?)?.toInt() ?? 0),
+      createdAt: json['createdAt']?.toString() ?? '',
+    );
+  }
+}
+
+

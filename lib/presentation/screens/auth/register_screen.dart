@@ -47,24 +47,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ],
       );
 
-      try {
-        await googleSignIn.signOut();
-      } catch (_) {}
-
       final account = await googleSignIn.signIn();
+
       if (account == null) {
         if (mounted) setState(() => _isGoogleLoading = false);
         return;
       }
 
       final auth = await account.authentication;
-      final idToken = auth.idToken ?? auth.accessToken ?? 'google_auth_token_${account.id}';
+      final idToken = auth.idToken ?? auth.accessToken ?? 'google_${account.id}';
 
       final response = await _authService.loginWithGoogle(
         idToken: idToken,
         email: account.email,
         displayName: account.displayName,
         photoUrl: account.photoUrl,
+        googleId: account.id,
       );
 
       if (mounted) {

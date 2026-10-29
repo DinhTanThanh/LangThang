@@ -25,6 +25,7 @@ class ApiConstants {
   static const String register = '/api/auth/register';
   static const String googleLogin = '/api/auth/google';
   static const String profile = '/api/auth/profile';
+  static const String changePassword = '/api/auth/change-password';
   static const String refreshToken = '/api/auth/refresh-token';
   static const String logout = '/api/auth/logout';
 
@@ -35,5 +36,24 @@ class ApiConstants {
   static const String provinces = '/api/provinces';
   static const String placeTypes = '/api/place-types';
   static const String featuredCollections = '/api/collections/featured';
-  static const String favorites = '/api/v1/users/me/favorites';
+  static const String favorites = '/api/users/me/favorites';
+  static const String systemSettings = '/api/admin/settings/system-settings';
+  static String similarPlaces(int placeId) => '/api/recommendations/places/$placeId/similar';
+  static String relatedPlaces(int placeId) => '/api/places/$placeId/related';
+  static const String personalizedPlaces = '/api/recommendations/places/for-you';
+  static const String recommendedFoods = '/api/recommendations/foods/for-you';
+  static String tripSuggestions(int tripId) => '/api/recommendations/trips/$tripId/suggested-places';
+
+  // Notifications
+  static const String notifications = '/api/notifications';
+  static const String unreadNotificationCount = '/api/notifications/unread-count';
+  static String markNotificationAsRead(int id) => '/api/notifications/$id/read';
+  static const String markAllNotificationsAsRead = '/api/notifications/read-all';
+  static String deleteNotification(int id) => '/api/notifications/$id';
+
+  // Leaderboard / Rankings
+  static const String rankingOverview = '/api/rankings/overview';
+  static const String rankingDetail = '/api/rankings/detail';
+  static const String rankingPlaces = '/api/rankings/places';
+  static const String rankingProvinces = '/api/rankings/provinces';
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/region_landing_model.dart';
+import '../../../data/services/favorite_api_service.dart';
 
 class RegionLandmarksSection extends StatefulWidget {
   final List<RegionLandmarkModel> landmarks;
@@ -136,6 +137,72 @@ class _LandmarkCardState extends State<_LandmarkCard> {
   int _imageIdx = 0;
   bool _isSaved = false;
 
+  int get _numericLandmarkId {
+    if (widget.landmark.id is int) {
+      return widget.landmark.id as int;
+    }
+    final parsed = int.tryParse(widget.landmark.id.toString().replaceAll(RegExp(r'\D'), ''));
+    if (parsed != null && parsed > 0) return parsed;
+    return (widget.landmark.name.hashCode.abs() % 100000);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSaved();
+  }
+
+  Future<void> _checkSaved() async {
+    final saved = await FavoriteApiService().isFavorite(1, _numericLandmarkId);
+    if (mounted) setState(() => _isSaved = saved);
+  }
+
+  void _toggleSave() {
+    final nextSaved = !_isSaved;
+    setState(() => _isSaved = nextSaved);
+
+    final landmark = widget.landmark;
+    final id = _numericLandmarkId;
+    final mediaList = landmark.mediaUrls.isNotEmpty
+        ? landmark.mediaUrls
+        : (landmark.imageUrl != null && landmark.imageUrl!.isNotEmpty
+            ? [landmark.imageUrl!]
+            : ['https://images.unsplash.com/photo-1528127269322-539801943592?q=80&w=600&auto=format&fit=crop']);
+    final cover = mediaList.isNotEmpty ? mediaList.first : '';
+
+    if (nextSaved) {
+      FavoriteApiService().addFavorite(
+        targetType: 1, // Place
+        targetId: id,
+        title: landmark.name,
+        subtitle: landmark.location.isNotEmpty ? landmark.location : landmark.province,
+        coverImg: cover,
+        categoryTag: landmark.category ?? 'Điểm tham quan',
+        rating: landmark.rating,
+        reviewCount: landmark.reviewCount,
+        price: landmark.price ?? 'Miễn phí',
+        mediaUrls: mediaList,
+      );
+    } else {
+      FavoriteApiService().removeFavorite(
+        targetType: 1,
+        targetId: id,
+      );
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          nextSaved
+              ? 'Đã lưu "${landmark.name}" vào danh sách yêu thích!'
+              : 'Đã bỏ lưu địa điểm.',
+        ),
+        duration: const Duration(seconds: 1),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final landmark = widget.landmark;
@@ -176,7 +243,7 @@ class _LandmarkCardState extends State<_LandmarkCard> {
                       top: 8,
                       right: 8,
                       child: GestureDetector(
-                        onTap: () => setState(() => _isSaved = !_isSaved),
+                        onTap: _toggleSave,
                         child: Container(
                           width: 30,
                           height: 30,

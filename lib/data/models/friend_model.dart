@@ -76,19 +76,31 @@ class FriendUser {
 
   factory FriendUser.fromJson(Map<String, dynamic> json) {
     return FriendUser(
-      id: (json['id'] as num?)?.toInt() ?? (json['userId'] as num?)?.toInt() ?? 0,
-      fullName: json['name']?.toString() ?? json['fullName']?.toString() ?? 'Người dùng',
-      email: json['email']?.toString() ?? '',
-      avatarUrl: json['avatar']?.toString() ?? json['avatarUrl']?.toString() ?? '',
-      coverUrl: json['coverUrl']?.toString() ?? '',
-      city: json['city']?.toString() ?? json['address']?.toString() ?? '',
-      bio: json['bio']?.toString() ?? '',
-      rankLevel: json['rankLevel'] ?? json['rank'] ?? 'Thành viên',
-      reputationScore: (json['reputationScore'] as num?)?.toInt() ?? 0,
-      mutualFriendsCount: (json['mutualFriendsCount'] as num?)?.toInt() ?? 0,
-      status: FriendshipStatus.fromCode(json['status']?.toString()),
-      connectedDate: json['requestedAt']?.toString() ?? json['connectedDate']?.toString(),
-      blockedDate: json['blockedDate']?.toString(),
+      id: (json['id'] as num?)?.toInt() ??
+          (json['Id'] as num?)?.toInt() ??
+          (json['userId'] as num?)?.toInt() ??
+          (json['UserId'] as num?)?.toInt() ??
+          0,
+      fullName: json['name']?.toString() ??
+          json['Name']?.toString() ??
+          json['fullName']?.toString() ??
+          json['FullName']?.toString() ??
+          'Người dùng',
+      email: json['email']?.toString() ?? json['Email']?.toString() ?? '',
+      avatarUrl: json['avatar']?.toString() ??
+          json['Avatar']?.toString() ??
+          json['avatarUrl']?.toString() ??
+          json['AvatarUrl']?.toString() ??
+          '',
+      coverUrl: json['coverUrl']?.toString() ?? json['CoverUrl']?.toString() ?? '',
+      city: json['city']?.toString() ?? json['City']?.toString() ?? json['address']?.toString() ?? '',
+      bio: json['bio']?.toString() ?? json['Bio']?.toString() ?? '',
+      rankLevel: json['rankLevel'] ?? json['RankLevel'] ?? json['rank'] ?? 'Thành viên',
+      reputationScore: (json['reputationScore'] as num?)?.toInt() ?? (json['ReputationScore'] as num?)?.toInt() ?? 0,
+      mutualFriendsCount: (json['mutualFriendsCount'] as num?)?.toInt() ?? (json['MutualFriendsCount'] as num?)?.toInt() ?? 0,
+      status: FriendshipStatus.fromCode(json['status']?.toString() ?? json['Status']?.toString()),
+      connectedDate: json['requestedAt']?.toString() ?? json['RequestedAt']?.toString() ?? json['connectedDate']?.toString(),
+      blockedDate: json['blockedDate']?.toString() ?? json['BlockedDate']?.toString(),
     );
   }
 
@@ -168,10 +180,10 @@ class FriendsResponseModel {
     }
 
     return FriendsResponseModel(
-      friends: parseList(json['friends'], FriendshipStatus.accepted),
-      pendingRequestsReceived: parseList(json['pendingRequestsReceived'], FriendshipStatus.pendingIncoming),
-      pendingRequestsSent: parseList(json['pendingRequestsSent'], FriendshipStatus.pendingOutgoing),
-      blockedUsers: parseList(json['blockedUsers'], FriendshipStatus.blocked),
+      friends: parseList(json['friends'] ?? json['Friends'], FriendshipStatus.accepted),
+      pendingRequestsReceived: parseList(json['pendingRequestsReceived'] ?? json['PendingRequestsReceived'], FriendshipStatus.pendingIncoming),
+      pendingRequestsSent: parseList(json['pendingRequestsSent'] ?? json['PendingRequestsSent'], FriendshipStatus.pendingOutgoing),
+      blockedUsers: parseList(json['blockedUsers'] ?? json['BlockedUsers'], FriendshipStatus.blocked),
     );
   }
 }

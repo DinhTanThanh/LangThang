@@ -7,14 +7,17 @@ import '../../../data/models/user_profile_data_models.dart';
 import '../../../data/services/place_api_service.dart';
 import '../../../data/services/user_profile_api_service.dart';
 import '../../screens/destinations/place_detail_screen.dart';
+import '../../screens/main_navigation_screen.dart';
 import '../mapbox_interactive_map.dart';
 
 class VisitedLogSectionWidget extends StatefulWidget {
   final VoidCallback? onLogChanged;
+  final VoidCallback? onGoToExplore;
 
   const VisitedLogSectionWidget({
     super.key,
     this.onLogChanged,
+    this.onGoToExplore,
   });
 
   @override
@@ -138,19 +141,16 @@ class _VisitedLogSectionWidgetState extends State<VisitedLogSectionWidget> {
     }
   }
 
-  void _openAddModal() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _AddVisitLogSheet(
-        onSaved: (newItem) {
-          setState(() {
-            _allLogs.insert(0, newItem);
-          });
-          widget.onLogChanged?.call();
-        },
-      ),
+  void _handleGoToExplore() {
+    if (widget.onGoToExplore != null) {
+      widget.onGoToExplore!();
+      return;
+    }
+    Navigator.of(context).pop();
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const MainNavigationScreen(initialIndex: 1)),
+      (route) => false,
     );
   }
 
@@ -217,220 +217,223 @@ class _VisitedLogSectionWidgetState extends State<VisitedLogSectionWidget> {
   Widget build(BuildContext context) {
     final filtered = _filteredLogs;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ===== Header Section =====
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Nhật ký đã ghé thăm',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF0F172A),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${_allLogs.length} địa điểm đã ghé qua · $_uniqueProvincesCount tỉnh thành',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF64748B),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Action Buttons: View mode switcher
-                  Row(
-                    children: [
-                      // View Switcher (Danh sách / Bản đồ)
-                      Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => setState(() => _viewMode = 'list'),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: _viewMode == 'list' ? Colors.white : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10),
-                                  boxShadow: _viewMode == 'list'
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.05),
-                                            blurRadius: 4,
-                                          )
-                                        ]
-                                      : null,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.grid_view_rounded,
-                                      size: 14,
-                                      color: _viewMode == 'list' ? const Color(0xFF065F46) : const Color(0xFF64748B),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Danh sách',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: _viewMode == 'list' ? const Color(0xFF065F46) : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => setState(() => _viewMode = 'map'),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: _viewMode == 'map' ? Colors.white : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(10),
-                                  boxShadow: _viewMode == 'map'
-                                      ? [
-                                          BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.05),
-                                            blurRadius: 4,
-                                          )
-                                        ]
-                                      : null,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.map_outlined,
-                                      size: 14,
-                                      color: _viewMode == 'map' ? const Color(0xFF065F46) : const Color(0xFF64748B),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Bản đồ',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: _viewMode == 'map' ? const Color(0xFF065F46) : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // Button "Ghi nhận điểm đến"
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _openAddModal,
-                  icon: const Icon(Icons.add_rounded, size: 16),
-                  label: const Text(
-                    'Ghi nhận điểm đến',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF065F46),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        // ===== Privacy Filter Chips =====
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _buildFilterChip(
-                label: 'Tất cả (${_allLogs.length})',
-                isSelected: _privacyFilter == null,
-                onTap: () => setState(() => _privacyFilter = null),
-              ),
-              const SizedBox(width: 8),
-              _buildFilterChip(
-                icon: Icons.public_rounded,
-                label: 'Công khai ($_publicCount)',
-                isSelected: _privacyFilter == 0,
-                selectedColor: const Color(0xFF065F46),
-                onTap: () => setState(() => _privacyFilter = 0),
-              ),
-              const SizedBox(width: 8),
-              _buildFilterChip(
-                icon: Icons.lock_outline_rounded,
-                label: 'Chỉ mình tôi ($_privateCount)',
-                isSelected: _privacyFilter == 1,
-                selectedColor: const Color(0xFF1E293B),
-                onTap: () => setState(() => _privacyFilter = 1),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        // ===== Content Body =====
-        if (_isLoading)
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ===== Header Section =====
           Container(
-            padding: const EdgeInsets.all(48),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: const Center(
-              child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Nhật ký đã ghé thăm',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${_allLogs.length} địa điểm đã ghé qua · $_uniqueProvincesCount tỉnh thành',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Action Buttons: View mode switcher
+                    Row(
+                      children: [
+                        // View Switcher (Danh sách / Bản đồ)
+                        Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () => setState(() => _viewMode = 'list'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: _viewMode == 'list' ? Colors.white : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(10),
+                                    boxShadow: _viewMode == 'list'
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.05),
+                                              blurRadius: 4,
+                                            )
+                                          ]
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.grid_view_rounded,
+                                        size: 14,
+                                        color: _viewMode == 'list' ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Danh sách',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: _viewMode == 'list' ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => setState(() => _viewMode = 'map'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: _viewMode == 'map' ? Colors.white : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(10),
+                                    boxShadow: _viewMode == 'map'
+                                        ? [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(alpha: 0.05),
+                                              blurRadius: 4,
+                                            )
+                                          ]
+                                        : null,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.map_outlined,
+                                        size: 14,
+                                        color: _viewMode == 'map' ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Bản đồ',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: _viewMode == 'map' ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 12),
+
+                // Button "Ghi nhận điểm đến"
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _handleGoToExplore,
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text(
+                      'Ghi nhận điểm đến',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF065F46),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          )
-        else if (_viewMode == 'map')
-          _buildMapView(filtered)
-        else if (filtered.isEmpty)
-          _buildEmptyState()
-        else
-          _buildGridView(filtered),
-      ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // ===== Privacy Filter Chips =====
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildFilterChip(
+                  label: 'Tất cả (${_allLogs.length})',
+                  isSelected: _privacyFilter == null,
+                  onTap: () => setState(() => _privacyFilter = null),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  icon: Icons.public_rounded,
+                  label: 'Công khai ($_publicCount)',
+                  isSelected: _privacyFilter == 0,
+                  selectedColor: const Color(0xFF065F46),
+                  onTap: () => setState(() => _privacyFilter = 0),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  icon: Icons.lock_outline_rounded,
+                  label: 'Chỉ mình tôi ($_privateCount)',
+                  isSelected: _privacyFilter == 1,
+                  selectedColor: const Color(0xFF1E293B),
+                  onTap: () => setState(() => _privacyFilter = 1),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // ===== Content Body =====
+          if (_isLoading)
+            Container(
+              padding: const EdgeInsets.all(48),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+              ),
+            )
+          else if (_viewMode == 'map')
+            _buildMapView(filtered)
+          else if (filtered.isEmpty)
+            _buildEmptyState()
+          else
+            _buildGridView(filtered),
+        ],
+      ),
     );
   }
 
@@ -631,7 +634,7 @@ class _VisitedLogSectionWidgetState extends State<VisitedLogSectionWidget> {
 
                     const SizedBox(height: 4),
 
-                    // Visited Date
+                    // Visited Date & Rating
                     Row(
                       children: [
                         const Text(
@@ -650,8 +653,34 @@ class _VisitedLogSectionWidgetState extends State<VisitedLogSectionWidget> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        if (log.rating != null && log.rating! > 0) ...[
+                          const Icon(Icons.star_rounded, size: 12, color: Color(0xFFF59E0B)),
+                          const SizedBox(width: 1),
+                          Text(
+                            '${log.rating}',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFFD97706),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
+
+                    if (log.note != null && log.note!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '💬 ${log.note!.trim()}',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontStyle: FontStyle.italic,
+                          color: Color(0xFF475569),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
 
                     const Spacer(),
 
@@ -843,7 +872,7 @@ class _VisitedLogSectionWidgetState extends State<VisitedLogSectionWidget> {
   Widget _buildEmptyState() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -853,46 +882,47 @@ class _VisitedLogSectionWidgetState extends State<VisitedLogSectionWidget> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            width: 56,
-            height: 56,
-            decoration: const BoxDecoration(
-              color: Color(0xFFECFDF5),
-              shape: BoxShape.circle,
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: const Icon(Icons.explore_outlined, color: Color(0xFF059669), size: 28),
+            child: const Icon(Icons.event_available_outlined, color: Color(0xFF94A3B8), size: 30),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           const Text(
-            'Chưa có nhật ký chuyến đi nào',
+            'Chưa có nhật ký điểm đến nào',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w800,
               color: Color(0xFF0F172A),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           const Text(
-            'Hãy bắt đầu lưu lại các địa điểm du lịch, danh lam thắng cảnh bạn đã từng đặt chân tới.',
+            'Ghi lại những địa danh, danh lam thắng cảnh bạn đã từng ghé thăm để lưu giữ kỷ niệm du lịch.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 12.5,
               color: Color(0xFF64748B),
-              height: 1.4,
+              height: 1.45,
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           ElevatedButton.icon(
-            onPressed: _openAddModal,
+            onPressed: _handleGoToExplore,
             icon: const Icon(Icons.add_rounded, size: 16),
             label: const Text(
-              'Ghi nhận điểm đến đầu tiên',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+              'Ghi nhận điểm đến ngay',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF065F46),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               elevation: 0,
             ),
           ),
@@ -919,6 +949,7 @@ class _AddVisitLogSheetState extends State<_AddVisitLogSheet> {
   final UserProfileApiService _profileApiService = UserProfileApiService();
 
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _noteController = TextEditingController();
   Timer? _debounceTimer;
 
   List<PlaceModel> _searchResults = [];
@@ -926,6 +957,7 @@ class _AddVisitLogSheetState extends State<_AddVisitLogSheet> {
   PlaceModel? _selectedPlace;
 
   DateTime _visitedDate = DateTime.now();
+  int _rating = 5;
   int _privacy = 0; // 0: Công khai, 1: Riêng tư
   String? _errorMessage;
   bool _isSubmitting = false;
@@ -933,6 +965,7 @@ class _AddVisitLogSheetState extends State<_AddVisitLogSheet> {
   @override
   void dispose() {
     _searchController.dispose();
+    _noteController.dispose();
     _debounceTimer?.cancel();
     super.dispose();
   }
@@ -970,7 +1003,7 @@ class _AddVisitLogSheetState extends State<_AddVisitLogSheet> {
       context: context,
       initialDate: _visitedDate,
       firstDate: DateTime(1990),
-      lastDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
       builder: (context, child) {
         return Theme(
           data: ThemeData.light().copyWith(
@@ -999,10 +1032,14 @@ class _AddVisitLogSheetState extends State<_AddVisitLogSheet> {
     final formattedDate =
         '${_visitedDate.year}-${_visitedDate.month.toString().padLeft(2, '0')}-${_visitedDate.day.toString().padLeft(2, '0')}';
 
+    final noteText = _noteController.text.trim();
+
     final res = await _profileApiService.createVisitLog(
       placeId: _selectedPlace!.id,
       visitedDate: formattedDate,
       privacy: _privacy,
+      note: noteText.isNotEmpty ? noteText : null,
+      rating: _rating > 0 ? _rating : null,
       placeName: _selectedPlace!.name,
       province: _selectedPlace!.province,
       category: _selectedPlace!.category,
@@ -1264,6 +1301,65 @@ class _AddVisitLogSheetState extends State<_AddVisitLogSheet> {
 
             const SizedBox(height: 14),
 
+            // Rating Stars
+            const Text('Đánh giá trải nghiệm', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(5, (idx) {
+                  final star = idx + 1;
+                  final isFilled = star <= _rating;
+                  return GestureDetector(
+                    onTap: () => setState(() => _rating = star),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2.0),
+                      child: Icon(
+                        isFilled ? Icons.star_rounded : Icons.star_outline_rounded,
+                        color: isFilled ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
+                        size: 28,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // Note
+            const Text('Ghi chú / Cảm nghĩ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _noteController,
+              maxLines: 2,
+              maxLength: 500,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+              decoration: InputDecoration(
+                hintText: 'Nhập cảm nhận hoặc lưu ý của bạn...',
+                hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                contentPadding: const EdgeInsets.all(10),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
             // Privacy Checkbox
             Row(
               children: [
@@ -1353,8 +1449,10 @@ class _EditVisitLogSheet extends StatefulWidget {
 
 class _EditVisitLogSheetState extends State<_EditVisitLogSheet> {
   final UserProfileApiService _profileApiService = UserProfileApiService();
+  late TextEditingController _noteController;
 
   late DateTime _visitedDate;
+  late int _rating;
   late int _privacy;
   bool _isSubmitting = false;
 
@@ -1363,6 +1461,14 @@ class _EditVisitLogSheetState extends State<_EditVisitLogSheet> {
     super.initState();
     _visitedDate = DateTime.tryParse(widget.log.visitedDate) ?? DateTime.now();
     _privacy = widget.log.privacy;
+    _rating = widget.log.rating ?? 5;
+    _noteController = TextEditingController(text: widget.log.note ?? '');
+  }
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
   }
 
   Future<void> _pickDate() async {
@@ -1370,7 +1476,7 @@ class _EditVisitLogSheetState extends State<_EditVisitLogSheet> {
       context: context,
       initialDate: _visitedDate,
       firstDate: DateTime(1990),
-      lastDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
       builder: (context, child) {
         return Theme(
           data: ThemeData.light().copyWith(
@@ -1391,10 +1497,14 @@ class _EditVisitLogSheetState extends State<_EditVisitLogSheet> {
     final formattedDate =
         '${_visitedDate.year}-${_visitedDate.month.toString().padLeft(2, '0')}-${_visitedDate.day.toString().padLeft(2, '0')}';
 
+    final noteText = _noteController.text.trim();
+
     await _profileApiService.updateVisitLog(
       widget.log.id,
       visitedDate: formattedDate,
       privacy: _privacy,
+      note: noteText.isNotEmpty ? noteText : null,
+      rating: _rating > 0 ? _rating : null,
     );
 
     if (mounted) {
@@ -1402,6 +1512,8 @@ class _EditVisitLogSheetState extends State<_EditVisitLogSheet> {
       final updated = widget.log.copyWith(
         visitedDate: formattedDate,
         privacy: _privacy,
+        note: noteText.isNotEmpty ? noteText : null,
+        rating: _rating > 0 ? _rating : null,
       );
       widget.onUpdated(updated);
       Navigator.pop(context);
@@ -1436,137 +1548,198 @@ class _EditVisitLogSheetState extends State<_EditVisitLogSheet> {
           ),
         ],
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Chỉnh sửa điểm đến đã ghé',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-              ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF94A3B8)),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-
-          // Place Name
-          const Text('Địa điểm', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
-          const SizedBox(height: 6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Chỉnh sửa điểm đến đã ghé',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF94A3B8)),
+                ),
+              ],
             ),
-            child: Text(
-              widget.log.placeName,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-            ),
-          ),
 
-          const SizedBox(height: 14),
+            const SizedBox(height: 12),
 
-          // Pick Date
-          const Text('Ngày ghé thăm *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
-          const SizedBox(height: 6),
-          GestureDetector(
-            onTap: _pickDate,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            // Place Name
+            const Text('Địa điểm', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B))),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    '${_visitedDate.day.toString().padLeft(2, '0')}/${_visitedDate.month.toString().padLeft(2, '0')}/${_visitedDate.year}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                  ),
-                  const Icon(Icons.calendar_today_rounded, size: 16, color: Color(0xFF64748B)),
-                ],
+              child: Text(
+                widget.log.placeName,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
               ),
             ),
-          ),
 
-          const SizedBox(height: 14),
+            const SizedBox(height: 14),
 
-          // Privacy Checkbox
-          Row(
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Checkbox(
-                  value: _privacy == 1,
-                  activeColor: const Color(0xFF065F46),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                  onChanged: (val) {
-                    setState(() => _privacy = (val == true) ? 1 : 0);
-                  },
+            // Pick Date
+            const Text('Ngày ghé thăm *', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: _pickDate,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_visitedDate.day.toString().padLeft(2, '0')}/${_visitedDate.month.toString().padLeft(2, '0')}/${_visitedDate.year}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                    ),
+                    const Icon(Icons.calendar_today_rounded, size: 16, color: Color(0xFF64748B)),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: () => setState(() => _privacy = (_privacy == 1) ? 0 : 1),
-                child: const Text(
-                  'Chỉ mình tôi thấy (Riêng tư)',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+            ),
+
+            const SizedBox(height: 14),
+
+            // Rating Stars
+            const Text('Đánh giá trải nghiệm', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(5, (idx) {
+                  final star = idx + 1;
+                  final isFilled = star <= _rating;
+                  return GestureDetector(
+                    onTap: () => setState(() => _rating = star),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2.0),
+                      child: Icon(
+                        isFilled ? Icons.star_rounded : Icons.star_outline_rounded,
+                        color: isFilled ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
+                        size: 28,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // Note
+            const Text('Ghi chú / Cảm nghĩ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF334155))),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _noteController,
+              maxLines: 2,
+              maxLength: 500,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+              decoration: InputDecoration(
+                hintText: 'Nhập cảm nhận hoặc lưu ý của bạn...',
+                hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                contentPadding: const EdgeInsets.all(10),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                 ),
               ),
-            ],
-          ),
+            ),
 
-          const SizedBox(height: 18),
+            const SizedBox(height: 8),
 
-          // Submit Buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            // Privacy Checkbox
+            Row(
+              children: [
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Checkbox(
+                    value: _privacy == 1,
+                    activeColor: const Color(0xFF065F46),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                    onChanged: (val) {
+                      setState(() => _privacy = (val == true) ? 1 : 0);
+                    },
                   ),
-                  child: const Text('Hủy', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold)),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF065F46),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => setState(() => _privacy = (_privacy == 1) ? 0 : 1),
+                  child: const Text(
+                    'Chỉ mình tôi thấy (Riêng tư)',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
                   ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Text('Cập nhật', style: TextStyle(fontWeight: FontWeight.w800)),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+
+            const SizedBox(height: 18),
+
+            // Submit Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: Color(0xFFE2E8F0)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Hủy', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isSubmitting ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF065F46),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Cập nhật', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

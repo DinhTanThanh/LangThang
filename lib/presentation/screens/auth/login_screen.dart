@@ -6,10 +6,16 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/services/auth_service.dart';
 import '../../widgets/custom_text_field.dart';
 import '../main_navigation_screen.dart';
+import 'forgot_password_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool redirectToHome;
+
+  const LoginScreen({
+    super.key,
+    this.redirectToHome = false,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -32,6 +38,23 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  void _navigateAfterSuccess() {
+    if (widget.redirectToHome) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const MainNavigationScreen(initialIndex: 0)),
+        (route) => false,
+      );
+    } else if (Navigator.canPop(context)) {
+      Navigator.pop(context, true);
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const MainNavigationScreen(initialIndex: 0)),
+      );
+    }
+  }
+
   Future<void> _handleGoogleLogin() async {
     setState(() => _isGoogleLoading = true);
     try {
@@ -48,19 +71,21 @@ class _LoginScreenState extends State<LoginScreen> {
       } catch (_) {}
 
       final account = await googleSignIn.signIn();
+
       if (account == null) {
         if (mounted) setState(() => _isGoogleLoading = false);
         return;
       }
 
       final auth = await account.authentication;
-      final idToken = auth.idToken ?? auth.accessToken ?? 'google_auth_token_${account.id}';
+      final idToken = auth.idToken ?? auth.accessToken ?? 'google_${account.id}';
 
       final response = await _authService.loginWithGoogle(
         idToken: idToken,
         email: account.email,
         displayName: account.displayName,
         photoUrl: account.photoUrl,
+        googleId: account.id,
       );
 
       if (mounted) {
@@ -74,10 +99,7 @@ class _LoginScreenState extends State<LoginScreen> {
               backgroundColor: AppColors.primary,
             ),
           );
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
-          );
+          _navigateAfterSuccess();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -122,10 +144,7 @@ class _LoginScreenState extends State<LoginScreen> {
             backgroundColor: AppColors.primary,
           ),
         );
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MainNavigationScreen()),
-        );
+        _navigateAfterSuccess();
       } else {
         final errorMsg = response.errors != null && response.errors!.isNotEmpty
             ? response.errors!.join('\n')
@@ -266,8 +285,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           GestureDetector(
                             onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Vui lòng kiểm tra email để đặt lại mật khẩu!')),
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ForgotPasswordScreen(
+                                    initialEmail: _emailController.text.trim(),
+                                  ),
+                                ),
                               );
                             },
                             child: const Text(

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 import '../../../data/models/review_model.dart';
+import '../../../data/services/auth_service.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../screens/auth/login_screen.dart';
 
 class EditReviewModal extends StatefulWidget {
   final ReviewItemModel review;
@@ -43,7 +44,6 @@ class _EditReviewModalState extends State<EditReviewModal> {
   late TextEditingController _contentController;
   final TextEditingController _imageUrlController = TextEditingController();
   final TextEditingController _videoUrlController = TextEditingController();
-  DateTime? _visitDate;
 
   late List<String> _existingImages;
   late List<String> _existingVideos;
@@ -62,9 +62,6 @@ class _EditReviewModalState extends State<EditReviewModal> {
     _contentController = TextEditingController(text: widget.review.content);
     _existingImages = List.from(widget.review.images);
     _existingVideos = List.from(widget.review.videos);
-    if (widget.review.visitDate != null) {
-      _visitDate = DateTime.tryParse(widget.review.visitDate!);
-    }
   }
 
   @override
@@ -158,34 +155,32 @@ class _EditReviewModalState extends State<EditReviewModal> {
     });
   }
 
-  Future<void> _selectVisitDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _visitDate ?? now,
-      firstDate: DateTime(2020),
-      lastDate: now,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF059669),
-              onPrimary: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) {
-      setState(() => _visitDate = picked);
-    }
-  }
-
   Future<void> _handleSubmit() async {
     final content = _contentController.text.trim();
     if (content.isEmpty) {
       setState(() => _errorMessage = 'Vui lòng nhập nội dung đánh giá của bạn.');
+      return;
+    }
+
+    // 1. Kiểm tra trạng thái đăng nhập trước khi gửi
+    final isLoggedIn = await AuthService().isLoggedIn();
+    if (!isLoggedIn) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'),
+          backgroundColor: Color(0xFF1E293B),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+      if (loggedIn == true && mounted) {
+        _handleSubmit();
+      }
       return;
     }
 
@@ -195,15 +190,10 @@ class _EditReviewModalState extends State<EditReviewModal> {
     });
 
     try {
-      final formattedDate = _visitDate != null
-          ? DateFormat('yyyy-MM-dd').format(_visitDate!)
-          : null;
-
       final res = await PlaceApiService().updateReview(
         widget.review.id,
         rating: _rating,
         content: content,
-        visitDate: formattedDate,
         existingMediaUrls: _existingImages,
         videos: _existingVideos,
         photoFiles: _newPhotos,
@@ -228,6 +218,32 @@ class _EditReviewModalState extends State<EditReviewModal> {
             ),
           );
         } else {
+          final msgLower = (res.message).toLowerCase();
+          final isAuthError = msgLower.contains('đăng nhập') ||
+              msgLower.contains('hết hạn') ||
+              msgLower.contains('unauthorized') ||
+              msgLower.contains('token') ||
+              !await AuthService().isLoggedIn();
+
+          if (isAuthError) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'),
+                backgroundColor: Color(0xFFDC2626),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            final loggedIn = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(builder: (context) => const LoginScreen()),
+            );
+            if (loggedIn == true && mounted) {
+              _handleSubmit();
+              return;
+            }
+          }
+
           setState(() {
             _errorMessage = res.message.isNotEmpty ? res.message : 'Không thể cập nhật đánh giá.';
           });
@@ -344,39 +360,6 @@ class _EditReviewModalState extends State<EditReviewModal> {
                   ),
                   const SizedBox(height: 18),
 
-                  // Visit date
-                  const Text(
-                    'THỜI GIAN GHÉ THĂM',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF4B5563)),
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: _selectVisitDate,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.calendar_month_outlined, size: 16, color: Color(0xFF6B7280)),
-                          const SizedBox(width: 8),
-                          Text(
-                            _visitDate != null
-                                ? DateFormat('dd/MM/yyyy').format(_visitDate!)
-                                : 'Chọn ngày bạn đến tham quan',
-                            style: TextStyle(
-                              fontSize: 12.5,
-                              color: _visitDate != null ? const Color(0xFF111827) : const Color(0xFF9CA3AF),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
 
                   // Content
                   Row(

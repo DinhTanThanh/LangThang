@@ -8,6 +8,7 @@ import '../../widgets/place_card_grid.dart';
 import '../../widgets/place_card_list.dart';
 import '../../widgets/filter_bottom_sheet.dart';
 import 'place_detail_screen.dart';
+import 'contribute_place_screen.dart';
 
 enum ViewMode { grid, list }
 
@@ -37,8 +38,11 @@ class DestinationsScreenState extends State<DestinationsScreen> {
   final FocusNode _searchFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   Timer? _debounceTimer;
+  Timer? _suggestionDebounceTimer;
 
   List<PlaceModel> _filteredPlaces = [];
+  List<PlaceModel> _dbPlaceSuggestions = [];
+  bool _isFetchingSuggestions = false;
   PlaceFilterOptionsDto? _filterOptions;
   int _totalElements = 0;
   int _totalPages = 1;
@@ -147,6 +151,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _suggestionDebounceTimer?.cancel();
     _scrollController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -214,7 +219,7 @@ class DestinationsScreenState extends State<DestinationsScreen> {
       minRating: _filterCriteria.minRating > 0 ? _filterCriteria.minRating : null,
       sortBy: _sortOption,
       page: page,
-      pageSize: 20,
+      pageSize: 12,
     );
   }
 
@@ -260,41 +265,70 @@ class DestinationsScreenState extends State<DestinationsScreen> {
 
   void _onSearchChanged(String value) {
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
       _fetchPlaces();
     });
+
+    _suggestionDebounceTimer?.cancel();
+    final query = value.trim();
+    if (query.isNotEmpty) {
+      setState(() {
+        _isFetchingSuggestions = true;
+      });
+      _suggestionDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+        _fetchDbSuggestions(query);
+      });
+    } else {
+      setState(() {
+        _dbPlaceSuggestions = [];
+        _isFetchingSuggestions = false;
+      });
+    }
   }
 
-  List<String> _getSuggestions() {
+  Future<void> _fetchDbSuggestions(String query) async {
+    if (query.isEmpty) return;
+    try {
+      final res = await _placeApiService.searchPlaces(PlaceFilterParams(
+        keyword: query,
+        page: 1,
+        pageSize: 6,
+      ));
+      if (mounted && _searchController.text.trim() == query) {
+        setState(() {
+          _dbPlaceSuggestions = res.data ?? [];
+          _isFetchingSuggestions = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isFetchingSuggestions = false;
+        });
+      }
+    }
+  }
+
+  List<String> _getCategoryAndProvinceSuggestions() {
     final q = _searchController.text.trim().toLowerCase();
-    final Set<String> matches = {};
+    if (q.isEmpty || _filterOptions == null) return [];
+    final List<String> matches = [];
 
-    if (_filterOptions != null) {
-      for (final cat in _filterOptions!.categories) {
-        if (q.isEmpty || cat.name.toLowerCase().contains(q)) {
-          matches.add(cat.name);
-        }
-      }
-      for (final reg in _filterOptions!.regions) {
-        for (final prov in reg.provinces) {
-          if (q.isEmpty || prov.name.toLowerCase().contains(q)) {
-            matches.add(prov.name);
-          }
+    for (final reg in _filterOptions!.regions) {
+      for (final prov in reg.provinces) {
+        if (prov.name.toLowerCase().contains(q) && !matches.contains(prov.name)) {
+          matches.add(prov.name);
         }
       }
     }
 
-    for (final p in _filteredPlaces) {
-      if (q.isEmpty || p.name.toLowerCase().contains(q)) {
-        matches.add(p.name);
+    for (final cat in _filterOptions!.categories) {
+      if (cat.name.toLowerCase().contains(q) && !matches.contains(cat.name)) {
+        matches.add(cat.name);
       }
     }
 
-    if (matches.isEmpty) {
-      matches.addAll(_trendingSuggestions);
-    }
-
-    return matches.take(6).toList();
+    return matches.take(4).toList();
   }
 
   void _openFilterBottomSheet() {
@@ -413,10 +447,30 @@ class DestinationsScreenState extends State<DestinationsScreen> {
       (s) => s['value'] == _sortOption,
       orElse: () => _sortOptions.first,
     )['label']!;
-    final suggestions = _getSuggestions();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ContributePlaceScreen(
+                initialCategory: _filterCriteria.category,
+                initialProvince: _filterCriteria.provinces.isNotEmpty ? _filterCriteria.provinces.first : null,
+              ),
+            ),
+          );
+        },
+        backgroundColor: const Color(0xFF047857),
+        foregroundColor: Colors.white,
+        elevation: 4,
+        icon: const Icon(Icons.add_location_alt_rounded, size: 20),
+        label: const Text(
+          'Đề xuất địa điểm',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: -0.2),
+        ),
+      ),
       body: SafeArea(
         child: GestureDetector(
           onTap: () {
@@ -456,82 +510,333 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                                     : _buildListView(),
                               ),
 
-                    // Suggestions Overlay Dropdown
-                    if (_showSuggestions && suggestions.isNotEmpty)
-                      Positioned(
-                        top: 0,
-                        left: 16,
-                        right: 16,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.1),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-                                child: Row(
-                                  children: const [
-                                    Icon(Icons.trending_up, size: 16, color: Color(0xFF047857)),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'GỢI Ý TÌM KIẾM',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF64748B),
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                              ...suggestions.map((item) {
-                                return InkWell(
-                                  onTap: () {
-                                    _searchController.text = item;
-                                    _searchFocusNode.unfocus();
-                                    _fetchPlaces();
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          item,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF1E293B),
-                                          ),
-                                        ),
-                                        const Icon(Icons.north_west, size: 14, color: Color(0xFF94A3B8)),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }),
-                            ],
-                          ),
-                        ),
-                      ),
+                    // Suggestions Overlay Dropdown from Database & Categories/Provinces
+                    if (_showSuggestions) _buildSuggestionsOverlay(),
                   ],
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==================== SUGGESTIONS OVERLAY ====================
+  Widget _buildSuggestionsOverlay() {
+    final query = _searchController.text.trim();
+    final catProvMatches = _getCategoryAndProvinceSuggestions();
+    final hasNoResults = query.isNotEmpty && !_isFetchingSuggestions && _dbPlaceSuggestions.isEmpty && catProvMatches.isEmpty;
+
+    return Positioned(
+      top: 0,
+      left: 16,
+      right: 16,
+      child: Material(
+        elevation: 8,
+        shadowColor: Colors.black.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 380),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // If query is empty -> Show trending keywords
+                  if (query.isEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.trending_up, size: 16, color: Color(0xFF047857)),
+                          SizedBox(width: 6),
+                          Text(
+                            'ĐIỂM ĐẾN PHỔ BIẾN & THỊNH HÀNH',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _trendingSuggestions.map((item) {
+                          return InkWell(
+                            onTap: () {
+                              _searchController.text = item;
+                              _searchFocusNode.unfocus();
+                              _fetchPlaces();
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.location_on_outlined, size: 14, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    item,
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF334155),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ] else ...[
+                    // When user types query:
+                    // 1. Loading state
+                    if (_isFetchingSuggestions)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: Row(
+                          children: const [
+                            SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Đang tìm kiếm trong cơ sở dữ liệu...',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // 2. Database Place Suggestions
+                    if (_dbPlaceSuggestions.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+                        child: Row(
+                          children: const [
+                            Icon(Icons.place_rounded, size: 16, color: Color(0xFF047857)),
+                            SizedBox(width: 6),
+                            Text(
+                              'ĐỊA ĐIỂM TỪ DATABASE',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF64748B),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      ..._dbPlaceSuggestions.map((place) {
+                        return InkWell(
+                          onTap: () {
+                            _searchFocusNode.unfocus();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => PlaceDetailScreen(
+                                  place: place,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            child: Row(
+                              children: [
+                                // Thumbnail Image
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    width: 44,
+                                    height: 44,
+                                    color: const Color(0xFFE2E8F0),
+                                    child: place.img.isNotEmpty
+                                        ? Image.network(
+                                            place.img,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) => const Icon(
+                                              Icons.image_not_supported,
+                                              size: 20,
+                                              color: Color(0xFF94A3B8),
+                                            ),
+                                          )
+                                        : const Icon(Icons.location_on, size: 22, color: Color(0xFF94A3B8)),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                // Title & Subtitle
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        place.name,
+                                        style: const TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Row(
+                                        children: [
+                                          if (place.rating > 0) ...[
+                                            const Icon(Icons.star_rounded, size: 14, color: Color(0xFFF59E0B)),
+                                            const SizedBox(width: 2),
+                                            Text(
+                                              place.rating.toStringAsFixed(1),
+                                              style: const TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF475569),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            const Text('•', style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 12)),
+                                            const SizedBox(width: 6),
+                                          ],
+                                          Expanded(
+                                            child: Text(
+                                              place.location.isNotEmpty
+                                                  ? place.location
+                                                  : (place.province.isNotEmpty ? place.province : place.category),
+                                              style: const TextStyle(
+                                                fontSize: 11.5,
+                                                color: Color(0xFF64748B),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Fill search button
+                                IconButton(
+                                  icon: const Icon(Icons.north_west_rounded, size: 16, color: Color(0xFF94A3B8)),
+                                  tooltip: 'Điền vào thanh tìm kiếm',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  onPressed: () {
+                                    _searchController.text = place.name;
+                                    _searchFocusNode.unfocus();
+                                    _fetchPlaces();
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+
+                    // 3. Category & Province suggestions
+                    if (catProvMatches.isNotEmpty) ...[
+                      if (_dbPlaceSuggestions.isNotEmpty) const Divider(height: 8, color: Color(0xFFF1F5F9)),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+                        child: Row(
+                          children: const [
+                            Icon(Icons.explore_outlined, size: 16, color: Color(0xFF047857)),
+                            SizedBox(width: 6),
+                            Text(
+                              'TỈNH THÀNH & DANH MỤC LIÊN QUAN',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF64748B),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ...catProvMatches.map((item) {
+                        return InkWell(
+                          onTap: () {
+                            _searchController.text = item;
+                            _searchFocusNode.unfocus();
+                            _fetchPlaces();
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.search, size: 15, color: Color(0xFF94A3B8)),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      item,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Icon(Icons.north_west, size: 14, color: Color(0xFF94A3B8)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
+
+                    // 4. Empty State
+                    if (hasNoResults)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 18, color: Color(0xFF94A3B8)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Không tìm thấy địa điểm nào khớp với "$query" trong cơ sở dữ liệu.',
+                                style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -591,6 +896,10 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                     IconButton(
                       icon: const Icon(Icons.close, size: 16, color: Color(0xFF94A3B8)),
                       onPressed: () {
+                        setState(() {
+                          _dbPlaceSuggestions = [];
+                          _isFetchingSuggestions = false;
+                        });
                         _searchController.clear();
                         _fetchPlaces();
                       },
@@ -1010,25 +1319,83 @@ class DestinationsScreenState extends State<DestinationsScreen> {
                 ),
               ),
             ),
+          )
+        else if (_filteredPlaces.length < _totalElements)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+              child: Center(
+                child: OutlinedButton.icon(
+                  onPressed: _loadMorePlaces,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFF059669)),
+                  label: Text(
+                    'Xem thêm địa điểm (${_filteredPlaces.length}/$_totalElements)',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF1E293B),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ),
           ),
       ],
     );
   }
 
   Widget _buildListView() {
+    final hasMore = _filteredPlaces.length < _totalElements;
+    final extraCount = (_isLoadingMore || hasMore) ? 1 : 0;
+
     return ListView.builder(
       controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      itemCount: _filteredPlaces.length + (_isLoadingMore ? 1 : 0),
+      itemCount: _filteredPlaces.length + extraCount,
       itemBuilder: (context, index) {
         if (index == _filteredPlaces.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+          if (_isLoadingMore) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: AppColors.primary,
+                ),
+              ),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
             child: Center(
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: AppColors.primary,
+              child: OutlinedButton.icon(
+                onPressed: _loadMorePlaces,
+                icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFF059669)),
+                label: Text(
+                  'Xem thêm địa điểm (${_filteredPlaces.length}/$_totalElements)',
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF1E293B),
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
               ),
             ),
           );

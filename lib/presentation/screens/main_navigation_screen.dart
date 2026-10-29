@@ -3,7 +3,6 @@ import '../../core/constants/app_colors.dart';
 import 'home/home_screen.dart';
 import 'destinations/destinations_screen.dart';
 import 'destinations/travel_map_screen.dart';
-import 'food/food_screen.dart';
 import 'itineraries/itineraries_screen.dart';
 import 'blog/blog_screen.dart';
 import 'profile/profile_screen.dart';
@@ -21,19 +20,27 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   late int _currentIndex;
   final GlobalKey<DestinationsScreenState> _destinationsKey = GlobalKey<DestinationsScreenState>();
+  final Set<int> _loadedIndices = {};
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    _loadedIndices.add(_currentIndex);
   }
 
   void _onTabTapped(int index) {
-    setState(() => _currentIndex = index);
+    setState(() {
+      _currentIndex = index;
+      _loadedIndices.add(index);
+    });
   }
 
   void _onNavigateToSearch({String? query, String? region, String? category}) {
-    setState(() => _currentIndex = 1);
+    setState(() {
+      _currentIndex = 1;
+      _loadedIndices.add(1);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _destinationsKey.currentState?.applySearch(
         query: query,
@@ -46,16 +53,27 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
-      HomeScreen(
-        onNavigateTab: _onTabTapped,
-        onNavigateToSearch: _onNavigateToSearch,
-      ),
-      DestinationsScreen(key: _destinationsKey),
-      const TravelMapScreen(),
-      const FoodScreen(),
-      const ItinerariesScreen(),
-      const BlogScreen(),
-      const ProfileScreen(),
+      _loadedIndices.contains(0)
+          ? HomeScreen(
+              onNavigateTab: _onTabTapped,
+              onNavigateToSearch: _onNavigateToSearch,
+            )
+          : const SizedBox.shrink(),
+      _loadedIndices.contains(1)
+          ? DestinationsScreen(key: _destinationsKey)
+          : const SizedBox.shrink(),
+      _loadedIndices.contains(2)
+          ? const TravelMapScreen()
+          : const SizedBox.shrink(),
+      _loadedIndices.contains(3)
+          ? const ItinerariesScreen()
+          : const SizedBox.shrink(),
+      _loadedIndices.contains(4)
+          ? const BlogScreen()
+          : const SizedBox.shrink(),
+      _loadedIndices.contains(5)
+          ? ProfileScreen(onNavigateTab: _onTabTapped)
+          : const SizedBox.shrink(),
     ];
 
     return Scaffold(
@@ -67,7 +85,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
           ),
           RecentVisitedFloatingDock(
             bottomMargin: 16,
-            onOpenProfile: () => _onTabTapped(6),
+            onOpenProfile: () => _onTabTapped(5),
           ),
         ],
       ),
@@ -110,11 +128,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               icon: Icon(Icons.map_outlined),
               activeIcon: Icon(Icons.map),
               label: 'Bản đồ',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.restaurant_outlined),
-              activeIcon: Icon(Icons.restaurant),
-              label: 'Ẩm thực',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.route_outlined),

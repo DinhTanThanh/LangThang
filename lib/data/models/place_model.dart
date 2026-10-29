@@ -49,8 +49,10 @@ class PlaceModel {
   final String img;
   final List<String> mediaUrls;
   final bool isSaved;
+  final bool isVisited;
   final double latitude;
   final double longitude;
+  final String? explainReason;
 
   const PlaceModel({
     required this.id,
@@ -77,8 +79,10 @@ class PlaceModel {
     required this.img,
     this.mediaUrls = const [],
     this.isSaved = false,
+    this.isVisited = false,
     this.latitude = 21.0285,
     this.longitude = 105.8542,
+    this.explainReason,
   });
 
   String get imageUrl => img;
@@ -110,8 +114,10 @@ class PlaceModel {
     String? img,
     List<String>? mediaUrls,
     bool? isSaved,
+    bool? isVisited,
     double? latitude,
     double? longitude,
+    String? explainReason,
   }) {
     return PlaceModel(
       id: id ?? this.id,
@@ -138,8 +144,10 @@ class PlaceModel {
       img: img ?? this.img,
       mediaUrls: mediaUrls ?? this.mediaUrls,
       isSaved: isSaved ?? this.isSaved,
+      isVisited: isVisited ?? this.isVisited,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
+      explainReason: explainReason ?? this.explainReason,
     );
   }
 
@@ -246,8 +254,12 @@ class PlaceModel {
       }
     }
 
-    // Description
-    final desc = json['description']?.toString() ?? json['desc']?.toString() ?? '';
+    // Description & ExplainReason
+    final explainReason = json['explainReason']?.toString();
+    final desc = json['description']?.toString() ??
+        json['desc']?.toString() ??
+        explainReason ??
+        '';
 
     // Tags
     List<String> tags = [];
@@ -304,13 +316,15 @@ class PlaceModel {
       }
     }
 
-    if (lat == 0.0 && lng == 0.0) {
-      lat = 21.0285;
-      lng = 105.8542;
+    // If coordinates are still missing or 0, determine coordinates by province/location
+    if (lat == 0.0 || lng == 0.0) {
+      final resolved = _resolveProvinceCoordinates(province, location, region);
+      lat = resolved[0];
+      lng = resolved[1];
     }
 
     return PlaceModel(
-      id: (json['id'] as num?)?.toInt() ?? 0,
+      id: (json['id'] as num?)?.toInt() ?? (json['placeId'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? '',
       category: category,
       location: location,
@@ -334,9 +348,50 @@ class PlaceModel {
       img: img,
       mediaUrls: mediaUrls,
       isSaved: json['isSaved'] as bool? ?? false,
+      isVisited: json['isVisited'] as bool? ?? json['isCheckedIn'] as bool? ?? false,
       latitude: lat,
       longitude: lng,
+      explainReason: explainReason,
     );
+  }
+
+  static List<double> _resolveProvinceCoordinates(String province, String location, String region) {
+    final text = '${province.toLowerCase()} ${location.toLowerCase()} ${region.toLowerCase()}';
+
+    if (text.contains('hà nội') || text.contains('ha noi')) return [21.0285, 105.8542];
+    if (text.contains('hồ chí minh') || text.contains('sài gòn') || text.contains('tp.hcm') || text.contains('tphcm')) return [10.7769, 106.7009];
+    if (text.contains('đà nẵng') || text.contains('da nang')) return [16.0544, 108.2022];
+    if (text.contains('huế') || text.contains('thừa thiên')) return [16.4637, 107.5909];
+    if (text.contains('quảng nam') || text.contains('hội an')) return [15.8801, 108.3380];
+    if (text.contains('lâm đồng') || text.contains('đà lạt')) return [11.9404, 108.4380];
+    if (text.contains('khánh hòa') || text.contains('nha trang')) return [12.2388, 109.1967];
+    if (text.contains('lào cai') || text.contains('sa pa') || text.contains('sapa')) return [22.3364, 103.8438];
+    if (text.contains('hà giang')) return [22.8233, 104.9836];
+    if (text.contains('quảng ninh') || text.contains('hạ long')) return [20.9515, 107.0736];
+    if (text.contains('ninh bình')) return [20.2506, 105.9744];
+    if (text.contains('hải phòng')) return [20.8449, 106.6881];
+    if (text.contains('cần thơ')) return [10.0452, 105.7469];
+    if (text.contains('kiên giang') || text.contains('phú quốc')) return [10.2899, 103.9840];
+    if (text.contains('vũng tàu') || text.contains('bà rịa')) return [10.3460, 107.0843];
+    if (text.contains('bình định') || text.contains('quy nhơn')) return [13.7830, 109.2197];
+    if (text.contains('quảng bình') || text.contains('đồng hới')) return [17.4760, 106.6000];
+    if (text.contains('tây ninh')) return [11.3100, 106.0988];
+    if (text.contains('an giang') || text.contains('châu đốc')) return [10.5216, 105.1259];
+    if (text.contains('cao bằng')) return [22.6657, 106.2625];
+    if (text.contains('phú yên') || text.contains('tuy hòa')) return [13.0882, 109.3142];
+    if (text.contains('bình thuận') || text.contains('phan thiết') || text.contains('mũi né')) return [10.9333, 108.1000];
+    if (text.contains('đắk lắk') || text.contains('buôn ma thuột')) return [12.6667, 108.0500];
+    if (text.contains('đồng nai') || text.contains('biên hòa')) return [10.9574, 106.8427];
+    if (text.contains('bình dương')) return [11.3254, 106.6826];
+    if (text.contains('tiền giang') || text.contains('mỹ tho')) return [10.3600, 106.3600];
+    if (text.contains('bến tre')) return [10.2433, 106.3756];
+    if (text.contains('cà mau')) return [9.1769, 105.1524];
+
+    if (text.contains('miền bắc') || text.contains('north')) return [21.0285, 105.8542];
+    if (text.contains('miền trung') || text.contains('central')) return [16.0544, 108.2022];
+    if (text.contains('miền nam') || text.contains('south')) return [10.7769, 106.7009];
+
+    return [21.0285, 105.8542];
   }
 
   static String _formatCurrency(int value) {
@@ -372,6 +427,7 @@ class PlaceModel {
       'img': img,
       'mediaUrls': mediaUrls,
       'isSaved': isSaved,
+      'isVisited': isVisited,
       'latitude': latitude,
       'longitude': longitude,
     };

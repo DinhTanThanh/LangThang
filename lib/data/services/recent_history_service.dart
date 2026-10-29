@@ -12,7 +12,9 @@ class RecentHistoryService {
   factory RecentHistoryService() => _instance;
   RecentHistoryService._internal();
 
-  static const String _storageKey = 'langthang_recent_visited';
+  static const String _storageBaseKey = 'langthang_recent_visited';
+
+  Future<String> _getStorageKey() async => await AuthService().getScopedKey(_storageBaseKey);
 
   // ValueNotifier to notify floating dock / UI in real time
   final ValueNotifier<List<UserAccessHistoryItemModel>> recentNotifier =
@@ -111,8 +113,9 @@ class RecentHistoryService {
   /// Clear all recent places
   Future<void> clearAll() async {
     try {
+      final key = await _getStorageKey();
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_storageKey);
+      await prefs.remove(key);
       recentNotifier.value = [];
     } catch (_) {}
   }
@@ -121,8 +124,9 @@ class RecentHistoryService {
 
   Future<List<UserAccessHistoryItemModel>> _getLocalItems() async {
     try {
+      final key = await _getStorageKey();
       final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString(_storageKey);
+      final jsonStr = prefs.getString(key);
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final list = jsonDecode(jsonStr) as List;
         return list.map((e) => UserAccessHistoryItemModel.fromJson(e as Map<String, dynamic>)).toList();
@@ -133,9 +137,10 @@ class RecentHistoryService {
 
   Future<void> _saveList(List<UserAccessHistoryItemModel> list) async {
     try {
+      final key = await _getStorageKey();
       final prefs = await SharedPreferences.getInstance();
       final jsonStr = jsonEncode(list.take(15).map((e) => e.toJson()).toList());
-      await prefs.setString(_storageKey, jsonStr);
+      await prefs.setString(key, jsonStr);
     } catch (_) {}
   }
 

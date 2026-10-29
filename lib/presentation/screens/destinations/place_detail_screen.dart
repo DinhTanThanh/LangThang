@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../../data/models/place_model.dart';
 import '../../../data/models/place_filter_dto.dart';
 import '../../../data/models/review_model.dart';
+import '../../../data/models/report_model.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../../data/services/favorite_api_service.dart';
+import '../../../data/services/user_profile_api_service.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/recent_history_service.dart';
 import '../../widgets/mapbox_interactive_map.dart';
 import '../../widgets/review/place_detail_reviews_section.dart';
+import '../../widgets/report/report_modal_sheet.dart';
+import '../../widgets/place/share_place_modal.dart';
+import '../../widgets/place/record_visit_modal.dart';
+import '../../widgets/itinerary/add_place_to_trip_sheet.dart';
 import '../../widgets/common/recent_visited_floating_dock.dart';
 import '../auth/login_screen.dart';
 import '../itineraries/itineraries_screen.dart';
-import 'map_directions_screen.dart';
 import 'travel_map_screen.dart';
 
 class PlaceDetailScreen extends StatefulWidget {
@@ -26,7 +31,9 @@ class PlaceDetailScreen extends StatefulWidget {
 class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   late PlaceModel _place;
   bool _isSaved = false;
+  bool _isVisited = false;
   List<PlaceModel> _relatedPlaces = [];
+  bool _isLoadingRelated = true;
 
   late double _currentRating;
   late int _currentReviewCount;
@@ -36,12 +43,20 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       GlobalKey<MapboxInteractiveMapState>();
 
   List<String> _galleryImages = [];
+  final ScrollController _similarScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _similarScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
     _place = widget.place;
     _isSaved = widget.place.isSaved;
+    _isVisited = widget.place.isVisited;
     _currentRating = widget.place.rating > 0 ? widget.place.rating : 5.0;
     _currentReviewCount = widget.place.reviews;
 
@@ -52,19 +67,45 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       _galleryImages = [_place.img];
     }
 
+    _checkInitialFavorite();
+    _checkInitialVisited();
     _fetchPlaceDetail();
     _fetchRelatedPlaces();
     _fetchReviews();
     RecentHistoryService().recordAccessHistory(widget.place);
   }
 
+  Future<void> _checkInitialVisited() async {
+    try {
+      final res = await UserProfileApiService().getMyVisitLogs();
+      if (res.success && res.data != null && mounted) {
+        final hasVisited = res.data!.any((log) => log.placeId == widget.place.id);
+        if (hasVisited) {
+          setState(() => _isVisited = true);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _checkInitialFavorite() async {
+    try {
+      final isFav = await FavoriteApiService().isFavorite(1, widget.place.id);
+      if (mounted && (isFav || _place.isSaved)) {
+        setState(() => _isSaved = isFav || _place.isSaved);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _fetchPlaceDetail() async {
     try {
+      final isFav = await FavoriteApiService().isFavorite(1, widget.place.id);
       final res = await PlaceApiService().getPlaceDetail(widget.place.id);
       if (mounted && res.data != null) {
         RecentHistoryService().recordAccessHistory(res.data!);
         setState(() {
           _place = res.data!;
+          _isSaved = res.data!.isSaved || isFav;
+          _isVisited = res.data!.isVisited || _isVisited;
           final fetchedMedia = _place.mediaUrls.where((u) => u.trim().isNotEmpty).toList();
           if (fetchedMedia.isNotEmpty) {
             _galleryImages = fetchedMedia;
@@ -89,7 +130,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
       final res = await PlaceApiService().getPlaceReviews(
         widget.place.id,
         page: 1,
-        pageSize: 30,
+        pageSize: 10,
       );
       if (mounted && res.data != null) {
         setState(() {
@@ -109,23 +150,38 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
   Future<void> _fetchRelatedPlaces() async {
     try {
+      setState(() => _isLoadingRelated = true);
+      final similar = await PlaceApiService().getSimilarPlaces(widget.place.id, topK: 12, radiusKm: 30);
+      if (mounted && similar.isNotEmpty) {
+        setState(() {
+          _relatedPlaces = similar.where((p) => p.id != widget.place.id).toList();
+          _isLoadingRelated = false;
+        });
+        return;
+      }
+
       final res = await PlaceApiService().searchPlaces(
         PlaceFilterParams(
           keyword: widget.place.province.isNotEmpty
               ? widget.place.province
               : (widget.place.region.isNotEmpty ? widget.place.region : null),
-          pageSize: 6,
+          pageSize: 12,
           sortBy: 'rating_desc',
         ),
       );
       if (mounted) {
         setState(() {
           if (res.data != null && res.data!.isNotEmpty) {
-            _relatedPlaces = res.data!.where((p) => p.id != widget.place.id).take(4).toList();
+            _relatedPlaces = res.data!.where((p) => p.id != widget.place.id).take(12).toList();
           }
+          _isLoadingRelated = false;
         });
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingRelated = false);
+      }
+    }
   }
 
   String _formatReviews(int count) {
@@ -136,25 +192,50 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
   }
 
   void _handleShare() {
-    Clipboard.setData(ClipboardData(text: 'https://langthang.vn/place/${_place.id}'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: const [
-            Icon(Icons.check_circle_rounded, color: Color(0xFF34D399), size: 18),
-            SizedBox(width: 8),
-            Text(
-              'Đã sao chép liên kết vào bộ nhớ tạm!',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ],
+    SharePlaceModal.show(context, place: _place);
+  }
+
+  void _handleAddToTrip() {
+    AddPlaceToTripSheet.show(context, place: _place);
+  }
+
+  Future<void> _handleToggleVisit() async {
+    final isLoggedIn = await AuthService().isLoggedIn();
+    if (!mounted) return;
+
+    if (!isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Vui lòng đăng nhập để ghi nhận điểm đến.'),
+          backgroundColor: const Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          duration: const Duration(seconds: 3),
         ),
-        backgroundColor: const Color(0xFF111827),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: const Duration(seconds: 2),
-      ),
+      );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+      if (mounted) {
+        _checkInitialVisited();
+      }
+      return;
+    }
+
+    final recorded = await RecordVisitModal.show(
+      context,
+      place: _place,
+      onRecorded: () {
+        if (mounted) {
+          setState(() => _isVisited = true);
+        }
+      },
     );
+
+    if (recorded == true && mounted) {
+      setState(() => _isVisited = true);
+    }
   }
 
   Future<void> _handleToggleSave() async {
@@ -164,21 +245,21 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     if (!isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Vui lòng đăng nhập để lưu địa điểm yêu thích.'),
+          content: const Text('Phiên đăng nhập đã hết hạn hoặc bạn chưa đăng nhập. Đang chuyển đến trang đăng nhập...'),
+          backgroundColor: const Color(0xFFDC2626),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          action: SnackBarAction(
-            label: 'Đăng nhập',
-            textColor: const Color(0xFF34D399),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-              );
-            },
-          ),
+          duration: const Duration(seconds: 3),
         ),
       );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+      if (mounted) {
+        _checkInitialFavorite();
+        _fetchPlaceDetail();
+      }
       return;
     }
 
@@ -191,12 +272,54 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
           : await PlaceApiService().unsavePlace(_place.id);
 
       if (!mounted) return;
+      if (!res.success) {
+        setState(() => _isSaved = !targetState);
+
+        final isAuthExpired = res.code == '401' ||
+            res.message.toLowerCase().contains('hết hạn') ||
+            res.message.toLowerCase().contains('đăng nhập') ||
+            res.message.toLowerCase().contains('unauthorized');
+
+        if (isAuthExpired) {
+          await AuthService().logout();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.'),
+              backgroundColor: Color(0xFFDC2626),
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 3),
+            ),
+          );
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+          if (mounted) {
+            _checkInitialFavorite();
+            _fetchPlaceDetail();
+          }
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message.isNotEmpty ? res.message : 'Không thể lưu vào database.'),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             targetState
-                ? (res.message.isNotEmpty ? res.message : 'Đã lưu "${_place.name}" vào danh sách yêu thích!')
-                : (res.message.isNotEmpty ? res.message : 'Đã bỏ lưu địa điểm.'),
+                ? (res.message.isNotEmpty ? res.message : 'Đã thêm "${_place.name}" vào danh sách yêu thích!')
+                : (res.message.isNotEmpty ? res.message : 'Đã bỏ yêu thích địa điểm.'),
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           backgroundColor: targetState ? const Color(0xFF047857) : const Color(0xFF374151),
@@ -205,9 +328,18 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
           duration: const Duration(seconds: 2),
         ),
       );
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() => _isSaved = !targetState);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi kết nối máy chủ: $e'),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     }
   }
@@ -258,9 +390,18 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
             onPressed: _handleShare,
           ),
           IconButton(
-            tooltip: _isSaved ? 'Đã lưu' : 'Lưu',
+            tooltip: _isVisited ? 'Đã ghi nhận' : 'Ghi nhận điểm đến',
             icon: Icon(
-              _isSaved ? Icons.bookmark : Icons.bookmark_border,
+              _isVisited ? Icons.event_available : Icons.calendar_today_outlined,
+              size: 20,
+              color: _isVisited ? const Color(0xFF047857) : const Color(0xFF374151),
+            ),
+            onPressed: _handleToggleVisit,
+          ),
+          IconButton(
+            tooltip: _isSaved ? 'Đã yêu thích' : 'Yêu thích',
+            icon: Icon(
+              _isSaved ? Icons.favorite : Icons.favorite_border,
               size: 20,
               color: _isSaved ? const Color(0xFFE11D48) : const Color(0xFF374151),
             ),
@@ -302,21 +443,21 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
                       // 3. Contact & Map Sidebar
                       _buildSidebarCard(place),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 20),
 
-                      // 4. Reviews & Ratings Section (Matching Share_Locations PlaceDetailReviews.tsx)
+                      // 4. Similar Places Section (Matching Share_Locations PlaceDetailRelated.tsx)
+                      if (_isLoadingRelated || _relatedPlaces.isNotEmpty) ...[
+                        _buildSimilarPlacesSection(),
+                        const SizedBox(height: 24),
+                      ],
+
+                      // 5. Reviews & Ratings Section (Matching Share_Locations PlaceDetailReviews.tsx)
                       PlaceDetailReviewsSection(
                         placeId: place.id,
                         placeName: place.name,
                         avgRating: _currentRating,
                         totalReviews: totalReviews,
                       ),
-
-                      // 5. Related Places
-                      if (_relatedPlaces.isNotEmpty) ...[
-                        const SizedBox(height: 24),
-                        _buildRelatedSection(),
-                      ],
 
                       const SizedBox(height: 80),
                     ],
@@ -456,10 +597,12 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
           const SizedBox(height: 12),
 
           // Actions
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                OutlinedButton.icon(
                   onPressed: _handleShare,
                   icon: const Icon(Icons.share_outlined, size: 15, color: Color(0xFF374151)),
                   label: const Text(
@@ -471,25 +614,49 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                     ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                     side: const BorderSide(color: Color(0xFFE5E7EB)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     backgroundColor: Colors.white,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
 
-              Expanded(
-                child: OutlinedButton.icon(
+                OutlinedButton.icon(
+                  onPressed: _handleToggleVisit,
+                  icon: Icon(
+                    _isVisited ? Icons.event_available : Icons.calendar_today_outlined,
+                    size: 15,
+                    color: _isVisited ? const Color(0xFF047857) : const Color(0xFF4B5563),
+                  ),
+                  label: Text(
+                    _isVisited ? 'Đã ghi nhận' : 'Ghi nhận điểm đến',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: _isVisited ? const Color(0xFF047857) : const Color(0xFF374151),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    side: BorderSide(
+                      color: _isVisited ? const Color(0xFFA7F3D0) : const Color(0xFFE5E7EB),
+                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    backgroundColor: _isVisited ? const Color(0xFFECFDF5) : Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                OutlinedButton.icon(
                   onPressed: _handleToggleSave,
                   icon: Icon(
-                    _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                    _isSaved ? Icons.favorite : Icons.favorite_border,
                     size: 15,
                     color: _isSaved ? const Color(0xFFE11D48) : const Color(0xFF374151),
                   ),
                   label: Text(
-                    _isSaved ? 'Đã lưu' : 'Lưu',
+                    _isSaved ? 'Đã yêu thích' : 'Yêu thích',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
@@ -497,7 +664,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                     ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                     side: BorderSide(
                       color: _isSaved ? const Color(0xFFFECDD3) : const Color(0xFFE5E7EB),
                     ),
@@ -505,20 +672,40 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                     backgroundColor: _isSaved ? const Color(0xFFFFF1F2) : Colors.white,
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
+                const SizedBox(width: 8),
 
-              OutlinedButton(
-                onPressed: () => _showReportModal(context),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                  side: const BorderSide(color: Color(0xFFE5E7EB)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  backgroundColor: Colors.white,
+                OutlinedButton.icon(
+                  onPressed: _handleAddToTrip,
+                  icon: const Icon(Icons.add_location_alt_outlined, size: 15, color: Color(0xFF047857)),
+                  label: const Text(
+                    'Lên lịch trình',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF047857),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    side: const BorderSide(color: Color(0xFFA7F3D0)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    backgroundColor: const Color(0xFFECFDF5),
+                  ),
                 ),
-                child: const Icon(Icons.flag_outlined, size: 16, color: Color(0xFF6B7280)),
-              ),
-            ],
+                const SizedBox(width: 8),
+
+                OutlinedButton(
+                  onPressed: () => _showReportModal(context),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    backgroundColor: Colors.white,
+                  ),
+                  child: const Icon(Icons.flag_outlined, size: 16, color: Color(0xFF6B7280)),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -532,15 +719,6 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
         : (place.desc.isNotEmpty
             ? place.desc
             : 'Điểm đến du lịch và văn hóa đặc sắc được du khách yêu thích khi ghé thăm ${place.province.isNotEmpty ? place.province : place.location}.');
-
-    final highlightsList = place.highlights.isNotEmpty
-        ? place.highlights
-        : [
-            'Không gian kiến trúc đặc trưng và cảnh quan thiên nhiên ấn tượng',
-            'Trải nghiệm văn hóa, ẩm thực địa phương độc đáo',
-            'Điểm chụp ảnh check-in được cộng đồng du lịch yêu thích',
-            'Phù hợp cho cả gia đình, nhóm bạn và du khách tự túc',
-          ];
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -603,122 +781,8 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
               }).toList(),
             ),
           ],
-
-          if (highlightsList.isNotEmpty) ...[
-            const SizedBox(height: 18),
-            const Divider(height: 1, color: Color(0xFFF3F4F6)),
-            const SizedBox(height: 16),
-            const Text(
-              'Điểm nổi bật thu hút',
-              style: TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF111827),
-              ),
-            ),
-            const SizedBox(height: 10),
-            ...highlightsList.map((h) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.check_circle_rounded,
-                      size: 16,
-                      color: Color(0xFF059669),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        h,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF374151),
-                          height: 1.45,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
-
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFF3F4F6)),
-          const SizedBox(height: 16),
-          const Text(
-            'Tiện ích & Dịch vụ có sẵn',
-            style: TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 10),
-          _buildAmenitiesGrid(place),
         ],
       ),
-    );
-  }
-
-  Widget _buildAmenitiesGrid(PlaceModel place) {
-    final amenities = place.amenities.isNotEmpty
-        ? place.amenities
-        : [
-            const PlaceAmenityModel(id: '1', name: 'Wifi miễn phí', icon: 'wifi'),
-            const PlaceAmenityModel(id: '2', name: 'Chỗ đỗ xe', icon: 'car'),
-            const PlaceAmenityModel(id: '3', name: 'Thanh toán thẻ/QR', icon: 'credit-card'),
-            const PlaceAmenityModel(id: '4', name: 'Điều hòa / Thoáng mát', icon: 'wind'),
-            const PlaceAmenityModel(id: '5', name: 'Thân thiện gia đình', icon: 'users'),
-            const PlaceAmenityModel(id: '6', name: 'Hướng dẫn viên', icon: 'compass'),
-          ];
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: amenities.map((a) {
-        IconData iconData = Icons.check_circle_outline;
-        final ic = a.icon.toLowerCase();
-        if (ic.contains('wifi')) {
-          iconData = Icons.wifi;
-        } else if (ic.contains('car') || ic.contains('park')) {
-          iconData = Icons.directions_car_outlined;
-        } else if (ic.contains('card') || ic.contains('credit') || ic.contains('pay')) {
-          iconData = Icons.credit_card_outlined;
-        } else if (ic.contains('wind') || ic.contains('air')) {
-          iconData = Icons.air_outlined;
-        } else if (ic.contains('user') || ic.contains('group') || ic.contains('family')) {
-          iconData = Icons.people_outline;
-        } else if (ic.contains('compass') || ic.contains('guide')) {
-          iconData = Icons.explore_outlined;
-        }
-
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF9FAFB),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFF3F4F6)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(iconData, size: 15, color: const Color(0xFF059669)),
-              const SizedBox(width: 6),
-              Text(
-                a.name,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF374151),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 
@@ -754,7 +818,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Thông tin liên hệ & Vị trí',
+            'Thông tin khác',
             style: TextStyle(
               fontSize: 15.5,
               fontWeight: FontWeight.w800,
@@ -919,7 +983,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: const [
                     Text(
-                      'Xem bản đồ lớn',
+                      'Xem toàn bộ bản đồ',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
@@ -1111,24 +1175,37 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => MapDirectionsScreen(place: place),
+                      builder: (context) => TravelMapScreen(
+                        initialPlace: place,
+                        initialSearchQuery: place.name,
+                        autoStartDirections: true,
+                      ),
                     ),
                   );
                 },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text(
-                      'Chỉ đường',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF059669),
+                borderRadius: BorderRadius.circular(4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: const Color(0xFF059669), width: 1.2),
+                    borderRadius: BorderRadius.circular(4),
+                    color: Colors.white,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Text(
+                        'Chỉ đường',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF059669),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 2),
-                    Icon(Icons.open_in_new, size: 11, color: Color(0xFF059669)),
-                  ],
+                      SizedBox(width: 4),
+                      Icon(Icons.open_in_new, size: 12, color: Color(0xFF059669)),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1274,156 +1351,200 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     );
   }
 
-  // ==================== 5. RELATED PLACES ====================
-  Widget _buildRelatedSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Có thể bạn sẽ thích',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF111827),
+  // ==================== 5. SIMILAR PLACES (Matching Share_Locations PlaceDetailRelated.tsx) ====================
+  Widget _buildSimilarPlacesSection() {
+    if (!_isLoadingRelated && _relatedPlaces.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
-        ),
-        const SizedBox(height: 12),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 0.72,
-          ),
-          itemCount: _relatedPlaces.length,
-          itemBuilder: (context, index) {
-            final item = _relatedPlaces[index];
-            return GestureDetector(
-              onTap: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PlaceDetailScreen(place: item),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section Header with Left/Right Scroll Arrows
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Địa Điểm Tương Tự Có Thể Bạn Sẽ Thích',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.3,
                   ),
-                );
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 5,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.network(
-                            item.img,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) =>
-                                Container(color: const Color(0xFFF3F4F6)),
-                          ),
-                          Positioned(
-                            top: 6,
-                            left: 6,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.92),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                item.category.isNotEmpty ? item.category : item.type,
-                                style: const TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF065F46),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      flex: 4,
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF111827),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  item.province.isNotEmpty ? item.province : item.location,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B7280)),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    const Icon(Icons.star_rounded, size: 13, color: Color(0xFFF59E0B)),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      item.rating > 0 ? item.rating.toStringAsFixed(1) : '5.0',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF111827),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Flexible(
-                                  child: Text(
-                                    item.price.isNotEmpty ? item.price : 'Miễn phí',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF059669),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ),
-            );
-          },
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildScrollArrowButton(
+                    icon: Icons.arrow_back,
+                    onTap: () {
+                      if (_similarScrollController.hasClients) {
+                        _similarScrollController.animateTo(
+                          (_similarScrollController.offset - 200 * 1.5).clamp(
+                            0.0,
+                            _similarScrollController.position.maxScrollExtent,
+                          ),
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _buildScrollArrowButton(
+                    icon: Icons.arrow_forward,
+                    onTap: () {
+                      if (_similarScrollController.hasClients) {
+                        _similarScrollController.animateTo(
+                          (_similarScrollController.offset + 200 * 1.5).clamp(
+                            0.0,
+                            _similarScrollController.position.maxScrollExtent,
+                          ),
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeInOut,
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 14),
+
+          // Horizontal Carousel: Loading Skeleton or Cards List
+          if (_isLoadingRelated)
+            _buildSimilarPlacesSkeleton()
+          else
+            SizedBox(
+              height: 255,
+              child: ListView.separated(
+                controller: _similarScrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: _relatedPlaces.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 14),
+                itemBuilder: (context, index) {
+                  final item = _relatedPlaces[index];
+                  return _SimilarPlaceItemCard(
+                    place: item,
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PlaceDetailScreen(place: item),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSimilarPlacesSkeleton() {
+    return SizedBox(
+      height: 255,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: 4,
+        separatorBuilder: (context, index) => const SizedBox(width: 14),
+        itemBuilder: (context, index) {
+          return SizedBox(
+            width: 195,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AspectRatio(
+                  aspectRatio: 1.0,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 14,
+                  width: 140,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  height: 12,
+                  width: 80,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildScrollArrowButton({required IconData icon, required VoidCallback onTap}) {
+    return Container(
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          hoverColor: const Color(0xFF2D6A4F).withValues(alpha: 0.1),
+          child: Center(
+            child: Icon(
+              icon,
+              size: 15,
+              color: const Color(0xFF475569),
+            ),
+          ),
         ),
-      ],
+      ),
     );
   }
 
@@ -1478,20 +1599,45 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
             ),
             const SizedBox(width: 12),
 
-            ElevatedButton.icon(
+            OutlinedButton.icon(
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => MapDirectionsScreen(place: place),
+                    builder: (context) => TravelMapScreen(
+                      initialPlace: place,
+                      initialSearchQuery: place.name,
+                      autoStartDirections: true,
+                    ),
                   ),
                 );
               },
-              icon: const Icon(Icons.navigation_rounded, size: 15, color: Colors.white),
+              icon: const Icon(Icons.navigation_rounded, size: 15, color: Color(0xFF059669)),
               label: const Text(
                 'Chỉ đường',
                 style: TextStyle(
-                  fontSize: 13.5,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF059669),
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Color(0xFF059669)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            ElevatedButton.icon(
+              onPressed: _handleAddToTrip,
+              icon: const Icon(Icons.add_location_alt_rounded, size: 15, color: Colors.white),
+              label: const Text(
+                'Thêm vào chuyến đi',
+                style: TextStyle(
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
                 ),
@@ -1500,7 +1646,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
                 backgroundColor: const Color(0xFF059669),
                 foregroundColor: Colors.white,
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1729,13 +1875,13 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
   // ==================== REPORT MODAL ====================
   void _showReportModal(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _ReportModalWidget(
-        placeId: _place.id,
-        placeName: _place.name,
+    ReportModalSheet.show(
+      context,
+      targetInfo: ReportTargetInfo.forPlace(
+        id: _place.id,
+        name: _place.name,
+        address: _place.location.isNotEmpty ? _place.location : _place.province,
+        rating: _currentRating > 0 ? _currentRating : null,
       ),
     );
   }
@@ -1874,455 +2020,204 @@ class _FullScreenGalleryViewerState extends State<_FullScreenGalleryViewer> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// REPORT MODAL WIDGET (Matching Share_Locations ReportModal.tsx)
-// ─────────────────────────────────────────────────────────────────────────────
-class _ReportModalWidget extends StatefulWidget {
-  final int placeId;
-  final String placeName;
+class _SimilarPlaceItemCard extends StatefulWidget {
+  final PlaceModel place;
+  final VoidCallback onTap;
 
-  const _ReportModalWidget({
-    required this.placeId,
-    required this.placeName,
+  const _SimilarPlaceItemCard({
+    required this.place,
+    required this.onTap,
   });
 
   @override
-  State<_ReportModalWidget> createState() => _ReportModalWidgetState();
+  State<_SimilarPlaceItemCard> createState() => _SimilarPlaceItemCardState();
 }
 
-class _ReportModalWidgetState extends State<_ReportModalWidget> {
-  static const List<Map<String, String>> _reportReasons = [
-    {
-      'id': 'closed',
-      'label': 'Địa điểm đã đóng cửa vĩnh viễn / Tạm dừng hoạt động',
-    },
-    {
-      'id': 'wrong_info',
-      'label': 'Thông tin không chính xác (Địa chỉ, giá vé, giờ mở cửa, SĐT)',
-    },
-    {
-      'id': 'inappropriate',
-      'label': 'Hình ảnh hoặc nội dung không phù hợp / Vi phạm',
-    },
-    {
-      'id': 'spam',
-      'label': 'Spam / Quảng cáo lừa đảo / Thông tin rác',
-    },
-    {
-      'id': 'other',
-      'label': 'Lý do khác',
-    },
-  ];
-
-  String _selectedReason = 'closed';
-  final TextEditingController _descriptionController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  bool _isSubmitting = false;
-  bool _isSuccess = false;
-  String _errorMessage = '';
-
-  @override
-  void dispose() {
-    _descriptionController.dispose();
-    _emailController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _handleSubmit() async {
-    setState(() {
-      _isSubmitting = true;
-      _errorMessage = '';
-    });
-
-    final selectedReasonObj = _reportReasons.firstWhere(
-      (r) => r['id'] == _selectedReason,
-      orElse: () => _reportReasons.first,
-    );
-
-    try {
-      final res = await PlaceApiService().reportPlace(
-        widget.placeId,
-        reason: selectedReasonObj['label'] ?? _selectedReason,
-        description: _descriptionController.text.trim(),
-        contactEmail: _emailController.text.trim(),
-      );
-
-      if (!mounted) return;
-
-      if (res.success) {
-        setState(() {
-          _isSubmitting = false;
-          _isSuccess = true;
-        });
-
-        Future.delayed(const Duration(milliseconds: 1800), () {
-          if (mounted) {
-            Navigator.pop(context);
-          }
-        });
-      } else {
-        setState(() {
-          _isSubmitting = false;
-          _errorMessage = res.message.isNotEmpty ? res.message : 'Gửi báo cáo không thành công.';
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-          _isSuccess = true;
-        });
-        Future.delayed(const Duration(milliseconds: 1800), () {
-          if (mounted) {
-            Navigator.pop(context);
-          }
-        });
-      }
-    }
-  }
+class _SimilarPlaceItemCardState extends State<_SimilarPlaceItemCard> {
+  int _activeImageIndex = 0;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 20),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Modal Header
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: const [
-                    Icon(Icons.flag_rounded, color: Color(0xFFE11D48), size: 20),
-                    SizedBox(width: 8),
-                    Text(
-                      'Báo cáo sai phạm / Đóng cửa',
-                      style: TextStyle(
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF111827),
+    final place = widget.place;
+    final mediaList = place.mediaUrls.isNotEmpty
+        ? place.mediaUrls
+        : (place.img.isNotEmpty ? [place.img] : []);
+    final hasMultipleImages = mediaList.length > 1;
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: SizedBox(
+        width: 195,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image with aspect ratio 1:1 and rounded-2xl (Matching PlaceDetailRelated.tsx)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: AspectRatio(
+                aspectRatio: 1.0,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (mediaList.isNotEmpty)
+                      Image.network(
+                        mediaList[_activeImageIndex % mediaList.length],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: const Color(0xFFF1F5F9),
+                          child: const Center(
+                            child: Icon(Icons.explore_outlined, color: Color(0xFF94A3B8), size: 32),
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        color: const Color(0xFFF1F5F9),
+                        child: const Center(
+                          child: Icon(Icons.explore_outlined, color: Color(0xFF94A3B8), size: 32),
+                        ),
                       ),
-                    ),
+
+                    // Multiple images indicator & arrows
+                    if (hasMultipleImages) ...[
+                      Positioned(
+                        left: 6,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _activeImageIndex = (_activeImageIndex == 0)
+                                    ? mediaList.length - 1
+                                    : _activeImageIndex - 1;
+                              });
+                            },
+                            child: Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A).withValues(alpha: 0.6),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.chevron_left_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 6,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _activeImageIndex = (_activeImageIndex == mediaList.length - 1)
+                                    ? 0
+                                    : _activeImageIndex + 1;
+                              });
+                            },
+                            child: Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A).withValues(alpha: 0.6),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.chevron_right_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF020617).withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${_activeImageIndex + 1}/${mediaList.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, color: Color(0xFF9CA3AF), size: 22),
-                  onPressed: () => Navigator.pop(context),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            // Place Name
+            Text(
+              place.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF0F172A),
+                letterSpacing: -0.2,
+              ),
+            ),
+
+            const SizedBox(height: 3),
+
+            // Rating row: Star + rating + bullet + reviewCount
+            Row(
+              children: [
+                const Icon(Icons.star_rounded, size: 15, color: Color(0xFFF59E0B)),
+                const SizedBox(width: 3),
+                Text(
+                  place.rating > 0 ? place.rating.toStringAsFixed(1) : '4.5',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  '·',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${place.reviews > 0 ? place.reviews : 8} đánh giá',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF64748B),
+                  ),
                 ),
               ],
             ),
-          ),
-          const Divider(height: 1, color: Color(0xFFF3F4F6)),
-
-          if (_isSuccess)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD1FAE5),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.check_circle_rounded,
-                      color: Color(0xFF059669),
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Gửi báo cáo thành công!',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Cảm ơn bạn đã đóng góp thông tin để cộng đồng chia sẻ địa điểm ngày càng hữu ích và chính xác hơn.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF4B5563),
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Warning Box
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF1F2),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFFFE4E6)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.warning_amber_rounded,
-                            size: 18,
-                            color: Color(0xFFE11D48),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: RichText(
-                              text: TextSpan(
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF9F1239),
-                                  height: 1.35,
-                                ),
-                                children: [
-                                  const TextSpan(text: 'Đang báo cáo địa điểm: '),
-                                  TextSpan(
-                                    text: widget.placeName,
-                                    style: const TextStyle(fontWeight: FontWeight.w700),
-                                  ),
-                                  const TextSpan(
-                                    text: '. Đội ngũ kiểm duyệt sẽ xác minh trong vòng 24h.',
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    if (_errorMessage.isNotEmpty) ...[
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFEE2E2)),
-                        ),
-                        child: Text(
-                          _errorMessage,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFFDC2626)),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                    ],
-
-                    // Reason Selector
-                    RichText(
-                      text: const TextSpan(
-                        text: 'Lý do báo cáo ',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF1F2937),
-                        ),
-                        children: [
-                          TextSpan(
-                            text: '*',
-                            style: TextStyle(color: Color(0xFFE11D48)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    Column(
-                      children: _reportReasons.map((reason) {
-                        final isSelected = _selectedReason == reason['id'];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: InkWell(
-                            onTap: () => setState(() => _selectedReason = reason['id']!),
-                            borderRadius: BorderRadius.circular(10),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                              decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? const Color(0xFF059669)
-                                      : const Color(0xFFE5E7EB),
-                                  width: isSelected ? 1.5 : 1.0,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    isSelected
-                                        ? Icons.radio_button_checked_rounded
-                                        : Icons.radio_button_off_rounded,
-                                    size: 18,
-                                    color: isSelected
-                                        ? const Color(0xFF059669)
-                                        : const Color(0xFF9CA3AF),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      reason['label']!,
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                        color: isSelected
-                                            ? const Color(0xFF065F46)
-                                            : const Color(0xFF374151),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // Additional details
-                    const Text(
-                      'Chi tiết bổ sung (tùy chọn)',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _descriptionController,
-                      minLines: 3,
-                      maxLines: 4,
-                      decoration: InputDecoration(
-                        hintText: 'Vui lòng cung cấp thêm thông tin chứng minh hoặc mô tả cụ thể...',
-                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
-                        contentPadding: const EdgeInsets.all(12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFF059669), width: 1.5),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    // Email input
-                    const Text(
-                      'Email của bạn (để nhận phản hồi nếu cần)',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: InputDecoration(
-                        hintText: 'name@example.com',
-                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFF059669), width: 1.5),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Actions
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: _isSubmitting ? null : () => Navigator.pop(context),
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFF4B5563),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          ),
-                          child: const Text(
-                            'Hủy bỏ',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: _isSubmitting ? null : _handleSubmit,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFE11D48),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: _isSubmitting
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(Icons.send_rounded, size: 15, color: Colors.white),
-                                    SizedBox(width: 6),
-                                    Text(
-                                      'Gửi báo cáo',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
+
+
+
+

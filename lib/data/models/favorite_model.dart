@@ -60,6 +60,36 @@ class FavoriteItemModel {
     this.mediaUrls = const [],
   });
 
+  FavoriteItemModel copyWith({
+    int? id,
+    int? targetId,
+    int? targetType,
+    String? title,
+    String? subtitle,
+    String? coverImg,
+    String? categoryTag,
+    double? rating,
+    int? reviewCount,
+    String? price,
+    String? savedDate,
+    List<String>? mediaUrls,
+  }) {
+    return FavoriteItemModel(
+      id: id ?? this.id,
+      targetId: targetId ?? this.targetId,
+      targetType: targetType ?? this.targetType,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      coverImg: coverImg ?? this.coverImg,
+      categoryTag: categoryTag ?? this.categoryTag,
+      rating: rating ?? this.rating,
+      reviewCount: reviewCount ?? this.reviewCount,
+      price: price ?? this.price,
+      savedDate: savedDate ?? this.savedDate,
+      mediaUrls: mediaUrls ?? this.mediaUrls,
+    );
+  }
+
   FavoriteTargetType get targetTypeEnum => FavoriteTargetType.fromValue(targetType);
 
   factory FavoriteItemModel.fromJson(Map<String, dynamic> json) {
@@ -143,6 +173,22 @@ class FavoritePagedResultModel {
       pageSize: size,
       totalCount: total,
       totalPages: pages,
+    );
+  }
+
+  FavoritePagedResultModel copyWith({
+    List<FavoriteItemModel>? items,
+    int? page,
+    int? pageSize,
+    int? totalCount,
+    int? totalPages,
+  }) {
+    return FavoritePagedResultModel(
+      items: items ?? this.items,
+      page: page ?? this.page,
+      pageSize: pageSize ?? this.pageSize,
+      totalCount: totalCount ?? this.totalCount,
+      totalPages: totalPages ?? this.totalPages,
     );
   }
 }

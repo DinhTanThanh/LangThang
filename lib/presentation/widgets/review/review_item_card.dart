@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../../../data/models/review_model.dart';
 import '../../../data/models/user_model.dart';
+import '../../../data/models/report_model.dart';
+import '../../../data/services/auth_service.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../screens/auth/login_screen.dart';
+import '../../screens/profile/user_profile_screen.dart';
+import '../report/report_modal_sheet.dart';
 import 'edit_review_modal.dart';
 import 'media_lightbox_modal.dart';
 import 'review_comment_thread.dart';
@@ -38,6 +42,7 @@ class _ReviewItemCardState extends State<ReviewItemCard> {
   void initState() {
     super.initState();
     _likesCount = widget.review.likesCount;
+    _isLiked = widget.review.isLiked;
     _commentsCount = widget.review.commentsCount;
   }
 
@@ -46,6 +51,9 @@ class _ReviewItemCardState extends State<ReviewItemCard> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.review.likesCount != widget.review.likesCount) {
       _likesCount = widget.review.likesCount;
+    }
+    if (oldWidget.review.isLiked != widget.review.isLiked) {
+      _isLiked = widget.review.isLiked;
     }
     if (oldWidget.review.commentsCount != widget.review.commentsCount) {
       _commentsCount = widget.review.commentsCount;
@@ -60,14 +68,33 @@ class _ReviewItemCardState extends State<ReviewItemCard> {
         (widget.review.userId == 'u_current');
   }
 
-  void _handleLikeToggle() {
-    if (!widget.isAuthenticated) {
+  Future<void> _handleLikeToggle() async {
+    final isLoggedIn = await AuthService().isLoggedIn();
+    if (!isLoggedIn) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng đăng nhập để thích đánh giá.')),
+        const SnackBar(
+          content: Text('Vui lòng đăng nhập để thích bài đánh giá.'),
+          backgroundColor: Color(0xFF1F2937),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
+      final didLogin = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+      if ((didLogin == true || await AuthService().isLoggedIn()) && mounted) {
+        // Tiếp tục tự động like sau khi đăng nhập thành công
+        await _handleLikeToggle();
+        return;
+      }
       return;
     }
 
+    final prevLiked = _isLiked;
+    final prevLikes = _likesCount;
+
+    // Optimistic UI update
     setState(() {
       if (_isLiked) {
         _isLiked = false;
@@ -77,24 +104,72 @@ class _ReviewItemCardState extends State<ReviewItemCard> {
         _likesCount += 1;
       }
     });
+
+    try {
+      final res = await PlaceApiService().toggleReviewLike(widget.review.id);
+      if (res.success && res.data != null) {
+        if (mounted) {
+          setState(() {
+            _isLiked = res.data!['isLiked'] == true;
+            if (res.data!['likesCount'] != null) {
+              _likesCount = (res.data!['likesCount'] as num).toInt();
+            }
+          });
+        }
+      } else {
+        final msgLower = (res.message).toLowerCase();
+        final isAuthError = res.message == 'AUTH_REQUIRED' ||
+            msgLower.contains('auth_required') ||
+            msgLower.contains('đăng nhập') ||
+            msgLower.contains('unauthorized') ||
+            msgLower.contains('token') ||
+            msgLower.contains('hết hạn') ||
+            !await AuthService().isLoggedIn();
+
+        // Revert on failure
+        if (mounted) {
+          setState(() {
+            _isLiked = prevLiked;
+            _likesCount = prevLikes;
+          });
+        }
+
+        if (isAuthError && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Vui lòng đăng nhập để tiếp tục thích bài đánh giá.'),
+              backgroundColor: Color(0xFF1F2937),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          final didLogin = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+          if ((didLogin == true || await AuthService().isLoggedIn()) && mounted) {
+            await _handleLikeToggle();
+            return;
+          }
+        } else if (mounted && res.message.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res.message),
+              backgroundColor: const Color(0xFFDC2626),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLiked = prevLiked;
+          _likesCount = prevLikes;
+        });
+      }
+    }
   }
 
-  void _handleShare() {
-    Clipboard.setData(ClipboardData(text: 'https://langthang.vn/review/${widget.review.id}'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle_rounded, color: Color(0xFF34D399), size: 18),
-            SizedBox(width: 8),
-            Text('Đã sao chép liên kết đánh giá vào bộ nhớ tạm!'),
-          ],
-        ),
-        backgroundColor: Color(0xFF111827),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
 
   Future<void> _handleDeleteReview() async {
     final confirm = await showDialog<bool>(
@@ -184,43 +259,54 @@ class _ReviewItemCardState extends State<ReviewItemCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: hasAvatar ? Colors.transparent : const Color(0xFFD1FAE5),
-                    backgroundImage: hasAvatar ? NetworkImage(review.userAvatar!) : null,
-                    child: !hasAvatar
-                        ? Text(
-                            review.userInitials,
-                            style: const TextStyle(
-                              color: Color(0xFF065F46),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        review.userName,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
+              InkWell(
+                onTap: () {
+                  UserProfileScreen.navigate(
+                    context,
+                    userId: review.userId.isNotEmpty ? review.userId : null,
+                    userName: review.userName,
+                    userAvatar: review.userAvatar,
+                  );
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: hasAvatar ? Colors.transparent : const Color(0xFFD1FAE5),
+                      backgroundImage: hasAvatar ? NetworkImage(review.userAvatar!) : null,
+                      child: !hasAvatar
+                          ? Text(
+                              review.userInitials,
+                              style: const TextStyle(
+                                color: Color(0xFF065F46),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          review.userName,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF111827),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 1),
-                      Text(
-                        review.timeAgo,
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-                      ),
-                    ],
-                  ),
-                ],
+                        const SizedBox(height: 1),
+                        Text(
+                          review.timeAgo,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
 
               Row(
@@ -455,14 +541,24 @@ class _ReviewItemCardState extends State<ReviewItemCard> {
                   ),
                 ],
               ),
-
-              IconButton(
-                icon: const Icon(Icons.share_outlined, size: 16, color: Color(0xFF9CA3AF)),
-                onPressed: _handleShare,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Chia sẻ đánh giá',
-              ),
+              if (!_isOwner)
+                IconButton(
+                  icon: const Icon(Icons.flag_outlined, size: 16, color: Color(0xFF9CA3AF)),
+                  onPressed: () {
+                    ReportModalSheet.show(
+                      context,
+                      targetInfo: ReportTargetInfo.forReview(
+                        id: review.id,
+                        userName: review.userName,
+                        reviewContent: review.content,
+                        rating: review.rating > 0 ? review.rating.toDouble() : null,
+                      ),
+                    );
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  tooltip: 'Báo cáo vi phạm',
+                ),
             ],
           ),
 

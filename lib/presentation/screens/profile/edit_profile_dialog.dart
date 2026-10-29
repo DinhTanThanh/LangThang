@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/image_utils.dart';
 import '../../../data/models/user_model.dart';
 
 class EditProfileDialog extends StatefulWidget {
@@ -309,10 +310,10 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                               ? (kIsWeb
                                   ? Image.network(_avatarFile!.path, fit: BoxFit.cover)
                                   : Image.file(File(_avatarFile!.path), fit: BoxFit.cover))
-                              : Image.network(
+                              : buildAppImage(
                                   widget.user.avatarUrl,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => Image.network(
+                                  errorWidget: Image.network(
                                     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop',
                                     fit: BoxFit.cover,
                                   ),
@@ -375,11 +376,11 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
                           ? (kIsWeb
                               ? Image.network(_coverFile!.path, fit: BoxFit.cover, width: double.infinity)
                               : Image.file(File(_coverFile!.path), fit: BoxFit.cover, width: double.infinity))
-                          : Image.network(
+                          : buildAppImage(
                               widget.user.coverUrl,
                               fit: BoxFit.cover,
                               width: double.infinity,
-                              errorBuilder: (context, error, stackTrace) => Image.network(
+                              errorWidget: Image.network(
                                 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1920&auto=format&fit=crop',
                                 fit: BoxFit.cover,
                                 width: double.infinity,

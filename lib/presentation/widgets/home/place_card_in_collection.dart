@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/place_model.dart';
-import '../../../data/services/place_api_service.dart';
 import '../../../data/services/favorite_api_service.dart';
 import '../../screens/destinations/place_detail_screen.dart';
 
@@ -22,7 +21,7 @@ class PlaceCardInCollection extends StatefulWidget {
 
 class _PlaceCardInCollectionState extends State<PlaceCardInCollection> {
   int _activeImageIndex = 0;
-  late bool _isSaved;
+  bool _isSaved = false;
 
   @override
   void initState() {
@@ -34,17 +33,52 @@ class _PlaceCardInCollectionState extends State<PlaceCardInCollection> {
   @override
   void didUpdateWidget(covariant PlaceCardInCollection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.place.id != widget.place.id || oldWidget.place.isSaved != widget.place.isSaved) {
-      _isSaved = widget.place.isSaved;
+    if (oldWidget.place.id != widget.place.id) {
       _checkSaved();
     }
   }
 
   Future<void> _checkSaved() async {
-    final isFav = await FavoriteApiService().isFavorite(1, widget.place.id);
-    if (mounted && (isFav != _isSaved)) {
-      setState(() => _isSaved = isFav);
+    final saved = await FavoriteApiService().isFavorite(1, widget.place.id);
+    if (mounted) setState(() => _isSaved = saved);
+  }
+
+  void _toggleSave() {
+    final nextSaved = !_isSaved;
+    setState(() => _isSaved = nextSaved);
+
+    final place = widget.place;
+    if (nextSaved) {
+      FavoriteApiService().addFavorite(
+        targetType: 1, // Place
+        targetId: place.id,
+        title: place.name,
+        subtitle: place.province.isNotEmpty ? place.province : place.location,
+        coverImg: place.imageUrl,
+        categoryTag: place.category,
+        rating: place.rating,
+        reviewCount: place.reviewCount,
+        price: place.price,
+        mediaUrls: place.mediaUrls,
+      );
+    } else {
+      FavoriteApiService().removeFavorite(
+        targetType: 1,
+        targetId: place.id,
+      );
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          nextSaved
+              ? 'Đã lưu "${place.name}" vào danh sách yêu thích!'
+              : 'Đã bỏ lưu địa điểm.',
+        ),
+        duration: const Duration(seconds: 1),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _prevImage() {
@@ -65,33 +99,6 @@ class _PlaceCardInCollectionState extends State<PlaceCardInCollection> {
     setState(() {
       _activeImageIndex = (_activeImageIndex == media.length - 1) ? 0 : _activeImageIndex + 1;
     });
-  }
-
-  void _toggleSave() async {
-    final willSave = !_isSaved;
-    setState(() {
-      _isSaved = willSave;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          willSave
-              ? 'Đã lưu "${widget.place.name}" vào danh sách yêu thích!'
-              : 'Đã bỏ lưu địa điểm.',
-        ),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-
-    try {
-      if (willSave) {
-        await PlaceApiService().savePlace(widget.place.id, place: widget.place);
-      } else {
-        await PlaceApiService().unsavePlace(widget.place.id);
-      }
-    } catch (_) {}
   }
 
   @override
@@ -170,35 +177,30 @@ class _PlaceCardInCollectionState extends State<PlaceCardInCollection> {
                             ),
                           ),
 
-                        // Heart Button (Top Right)
+                        // Heart save button
                         Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: _toggleSave,
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.95),
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.1),
-                                      blurRadius: 4,
-                                    ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: Icon(
-                                    _isSaved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                    color: _isSaved ? const Color(0xFFF43F5E) : const Color(0xFF1E293B),
-                                    size: 16,
+                          top: 6,
+                          right: 6,
+                          child: GestureDetector(
+                            onTap: _toggleSave,
+                            child: Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.92),
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 4,
                                   ),
-                                ),
+                                ],
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                _isSaved ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                                size: 15,
+                                color: _isSaved ? const Color(0xFFF43F5E) : const Color(0xFF1E293B),
                               ),
                             ),
                           ),

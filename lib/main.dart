@@ -8,7 +8,6 @@ import 'presentation/screens/auth/login_screen.dart';
 import 'presentation/screens/auth/register_screen.dart';
 import 'presentation/screens/destinations/destinations_screen.dart';
 import 'presentation/screens/destinations/collections_screen.dart';
-import 'presentation/screens/food/food_screen.dart';
 import 'presentation/screens/itineraries/itineraries_screen.dart';
 import 'presentation/screens/blog/blog_screen.dart';
 import 'presentation/screens/profile/profile_screen.dart';
@@ -51,11 +50,10 @@ class LangThangApp extends StatelessWidget {
       home: const MainNavigationScreen(),
       routes: {
         '/main': (context) => const MainNavigationScreen(),
-        '/login': (context) => const LoginScreen(),
+        '/login': (context) => const LoginScreen(redirectToHome: true),
         '/register': (context) => const RegisterScreen(),
         '/destinations': (context) => const DestinationsScreen(),
         '/collections': (context) => const CollectionsScreen(),
-        '/food': (context) => const FoodScreen(),
         '/itineraries': (context) => const ItinerariesScreen(),
         '/blogs': (context) => const BlogScreen(),
         '/profile': (context) => const ProfileScreen(),

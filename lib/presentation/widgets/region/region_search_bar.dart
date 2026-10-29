@@ -4,12 +4,14 @@ import '../../../data/models/region_landing_model.dart';
 class RegionSearchBar extends StatefulWidget {
   final RegionLandingModel data;
   final Function(String query, String? province)? onSearch;
+  final Function(String province)? onSelectProvince;
   final Function(String? province)? onOpenMap;
 
   const RegionSearchBar({
     super.key,
     required this.data,
     this.onSearch,
+    this.onSelectProvince,
     this.onOpenMap,
   });
 
@@ -144,6 +146,9 @@ class _RegionSearchBarState extends State<RegionSearchBar> {
                       ],
                       onChanged: (val) {
                         setState(() => _selectedProvince = val);
+                        if (val != null && val.isNotEmpty) {
+                          widget.onSelectProvince?.call(val);
+                        }
                       },
                     ),
                   ),

@@ -68,16 +68,27 @@ class _FoodSpecialtyCardState extends State<FoodSpecialtyCard> {
     });
 
     final foodId = _numericFoodId;
+    final cover = widget.food.imageUrl.isNotEmpty
+        ? widget.food.imageUrl
+        : (widget.food.allMediaUrls.isNotEmpty ? widget.food.allMediaUrls.first : '');
+    final location = widget.food.province.isNotEmpty
+        ? widget.food.province
+        : (widget.food.region == 'north'
+            ? 'Miền Bắc'
+            : (widget.food.region == 'central' ? 'Miền Trung' : 'Miền Nam'));
+
     if (nextSaved) {
       FavoriteApiService().addFavorite(
         targetType: 2, // Food
         targetId: foodId,
         title: widget.food.name,
-        subtitle: widget.food.region,
-        coverImg: widget.food.imageUrl,
-        categoryTag: widget.food.type,
-        rating: widget.food.rating,
-        price: widget.food.priceRange,
+        subtitle: location,
+        coverImg: cover,
+        categoryTag: widget.food.type.isNotEmpty ? widget.food.type : 'Đặc sản ẩm thực',
+        rating: widget.food.rating > 0 ? widget.food.rating : 5.0,
+        reviewCount: 20,
+        price: widget.food.priceRange.isNotEmpty ? widget.food.priceRange : 'Tham khảo',
+        mediaUrls: widget.food.allMediaUrls,
       );
     } else {
       FavoriteApiService().removeFavorite(

@@ -96,6 +96,8 @@ class FoodModel {
       mediaList = rawMedia.map((e) => e.toString()).toList();
     } else if (json['imageUrl'] != null && json['imageUrl'].toString().isNotEmpty) {
       mediaList = [json['imageUrl'].toString()];
+    } else if (json['coverImageUrl'] != null && json['coverImageUrl'].toString().isNotEmpty) {
+      mediaList = [json['coverImageUrl'].toString()];
     }
 
     final rawPlaces = json['suggestedPlaces'];
@@ -106,6 +108,24 @@ class FoodModel {
           .toList();
     }
 
+    // Support matchedPlace from recommendation API
+    if (placesList.isEmpty && (json['matchedPlaceName'] != null || json['matchedPlaceId'] != null)) {
+      placesList.add(
+        FoodSuggestedPlace(
+          id: json['matchedPlaceId'] is num
+              ? (json['matchedPlaceId'] as num).toInt()
+              : int.tryParse(json['matchedPlaceId']?.toString() ?? ''),
+          name: (json['matchedPlaceName'] as String?)?.isNotEmpty == true
+              ? json['matchedPlaceName'] as String
+              : 'Đặc sản ẩm thực nổi bật',
+          address: (json['matchedPlaceAddress'] as String?)?.isNotEmpty == true
+              ? json['matchedPlaceAddress'] as String
+              : 'Địa điểm ẩm thực uy tín',
+          rating: (json['matchedPlaceRating'] as num?)?.toDouble() ?? 4.8,
+        ),
+      );
+    }
+
     List<double>? parsedCoords;
     if (json['coordinates'] is List) {
       parsedCoords = (json['coordinates'] as List)
@@ -113,13 +133,19 @@ class FoodModel {
           .toList();
     }
 
+    final id = json['id']?.toString() ?? json['foodId']?.toString() ?? '';
+    final name = json['name'] as String? ?? json['title'] as String? ?? '';
+    final imageUrl = json['imageUrl'] as String? ??
+        json['coverImageUrl'] as String? ??
+        (mediaList.isNotEmpty ? mediaList.first : '');
+
     return FoodModel(
-      id: json['id']?.toString() ?? '',
-      name: json['name'] as String? ?? json['title'] as String? ?? '',
+      id: id,
+      name: name,
       province: json['province'] as String? ?? json['location'] as String? ?? '',
       region: json['region'] as String? ?? 'north',
       description: json['description'] as String? ?? '',
-      imageUrl: json['imageUrl'] as String? ?? (mediaList.isNotEmpty ? mediaList.first : ''),
+      imageUrl: imageUrl,
       mediaUrls: mediaList,
       type: json['type'] as String? ?? 'dine-in',
       priceRange: json['priceRange'] as String? ?? '40.000đ - 100.000đ',

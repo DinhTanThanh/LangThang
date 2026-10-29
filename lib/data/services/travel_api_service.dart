@@ -188,6 +188,31 @@ class TravelApiService {
     return ItineraryApiService().saveItinerary(id, itinerary: itinerary, isSaving: isSaving);
   }
 
+  /// Lấy danh sách ID các lịch trình đã áp dụng
+  Future<Set<int>> getAppliedItineraryIds() async {
+    return ItineraryApiService().getAppliedItineraryIds();
+  }
+
+  /// Áp dụng hoặc bỏ áp dụng lịch trình chuyến đi
+  Future<bool> applyItinerary(int id, {ItineraryModel? itinerary, bool isApplying = true}) async {
+    return ItineraryApiService().applyItinerary(id, itinerary: itinerary, isApplying: isApplying);
+  }
+
+  /// Tạo chuyến đi mới trên Database
+  Future<ItineraryModel?> createNewTrip({
+    String title = 'Chuyến đi của tôi',
+    String? description,
+    String? destination = 'Việt Nam',
+    String? region = 'Miền Bắc',
+  }) async {
+    return ItineraryApiService().createNewTrip(
+      title: title,
+      description: description,
+      destination: destination,
+      region: region,
+    );
+  }
+
   /// Lấy danh sách bài viết blog
   Future<List<BlogModel>> getBlogs({
     String? category,
