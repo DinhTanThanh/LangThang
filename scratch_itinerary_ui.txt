@@ -1,0 +1,630 @@
+1171:   Widget build(BuildContext context) {
+1172:     final totalCost = _itinerary.calculatedTotalCost;
+1173:     final budgetTarget = _itinerary.budgetTarget ?? 5000000;
+1174:     final percentUsed = budgetTarget > 0 ? ((totalCost / budgetTarget) * 100).round() : 0;
+1175:     final isOverBudget = totalCost > budgetTarget;
+1176:     final members = _itinerary.members;
+1177: 
+1178:     final isAllExpanded = _expandedDayIndices.length == _itinerary.days.length;
+1179: 
+1180:     // Filtered Days by Search Query
+1181:     final query = _searchQuery.trim().toLowerCase();
+1182:     final displayedDays = _itinerary.days.map((day) {
+1183:       if (query.isEmpty) return day;
+1184:       final filteredStops = day.stops.where((s) {
+1185:         return s.activity.toLowerCase().contains(query) ||
+1186:             s.location.toLowerCase().contains(query) ||
+1187:             s.category.toLowerCase().contains(query) ||
+1188:             (s.description ?? '').toLowerCase().contains(query);
+1189:       }).toList();
+1190:       return day.copyWith(stops: filteredStops);
+1191:     }).toList();
+1192: 
+1193:     return Scaffold(
+1194:       backgroundColor: const Color(0xFFF8FAFC),
+1195:       appBar: PreferredSize(
+1196:         preferredSize: const Size.fromHeight(106),
+1197:         child: Container(
+1198:           decoration: const BoxDecoration(
+1199:             color: Colors.white,
+1200:             border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+1201:           ),
+1202:           child: SafeArea(
+1203:             child: Padding(
+1204:               padding: const EdgeInsets.fromLTRB(8, 4, 10, 6),
+1205:               child: Column(
+1206:                 mainAxisAlignment: MainAxisAlignment.center,
+1207:                 children: [
+1208:                   // Row 1: Back, Info/Title, Actions (Members, Save, Bookmark)
+1209:                   Row(
+1210:                     children: [
+1211:                       // Back Button
+1212:                       IconButton(
+1213:                         visualDensity: VisualDensity.compact,
+1214:                         padding: const EdgeInsets.all(4),
+1215:                         constraints: const BoxConstraints(),
+1216:                         icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF334155), size: 20),
+1217:                         onPressed: () async {
+1218:                           if (_hasUnsavedChanges) {
+1219:                             await TravelApiService().applyItinerary(_itinerary.id, itinerary: _itinerary, isApplying: true);
+1220:                           }
+1221:                           if (context.mounted) Navigator.pop(context);
+1222:                         },
+1223:                       ),
+1224:                       const SizedBox(width: 6),
+1225: 
+1226:                       // Title & Badges
+1227:                       Expanded(
+1228:                         child: Column(
+1229:                           crossAxisAlignment: CrossAxisAlignment.start,
+1230:                           mainAxisSize: MainAxisSize.min,
+1231:                           children: [
+1232:                             Row(
+1233:                               children: [
+1234:                                 // Privacy Badge
+1235:                                 InkWell(
+1236:                                   onTap: _togglePublish,
+1237:                                   borderRadius: BorderRadius.circular(10),
+1238:                                   child: Container(
+1239:                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+1240:                                     decoration: BoxDecoration(
+1241:                                       color: _isPublished ? const Color(0xFFD1FAE5) : const Color(0xFFF1F5F9),
+1242:                                       borderRadius: BorderRadius.circular(8),
+1243:                                       border: Border.all(
+1244:                                         color: _isPublished ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0),
+1245:                                       ),
+1246:                                     ),
+1247:                                     child: Row(
+1248:                                       mainAxisSize: MainAxisSize.min,
+1249:                                       children: [
+1250:                                         Icon(
+1251:                                           _isPublished ? Icons.public_rounded : Icons.lock_outline_rounded,
+1252:                                           size: 10,
+1253:                                           color: _isPublished ? const Color(0xFF065F46) : const Color(0xFF475569),
+1254:                                         ),
+1255:                                         const SizedBox(width: 3),
+1256:                                         Text(
+1257:                                           _isPublished ? 'CÔNG KHAI' : 'RIÊNG TƯ',
+1258:                                           style: TextStyle(
+1259:                                             fontSize: 9,
+1260:                                             fontWeight: FontWeight.w800,
+1261:                                             color: _isPublished ? const Color(0xFF065F46) : const Color(0xFF475569),
+1262:                                           ),
+1263:                                         ),
+1264:                                       ],
+1265:                                     ),
+1266:                                   ),
+1267:                                 ),
+1268:                                 const SizedBox(width: 4),
+1269:                                 Expanded(
+1270:                                   child: InkWell(
+1271:                                     onTap: _showEditTitleDialog,
+1272:                                     child: Row(
+1273:                                       mainAxisSize: MainAxisSize.min,
+1274:                                       children: [
+1275:                                         const Icon(Icons.location_on_rounded, size: 10, color: Color(0xFF94A3B8)),
+1276:                                         const SizedBox(width: 1),
+1277:                                         Expanded(
+1278:                                           child: Text(
+1279:                                             '${_itinerary.destination.isNotEmpty ? _itinerary.destination : 'Việt Nam'} • ${_itinerary.daysCount}N${_itinerary.nightsCount}Đ',
+1280:                                             style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+1281:                                             maxLines: 1,
+1282:                                             overflow: TextOverflow.ellipsis,
+1283:                                           ),
+1284:                                         ),
+1285:                                       ],
+1286:                                     ),
+1287:                                   ),
+1288:                                 ),
+1289:                               ],
+1290:                             ),
+1291:                             const SizedBox(height: 1),
+1292:                             InkWell(
+1293:                               onTap: _showEditTitleDialog,
+1294:                               child: Row(
+1295:                                 mainAxisSize: MainAxisSize.min,
+1296:                                 children: [
+1297:                                   Flexible(
+1298:                                     child: Text(
+1299:                                       _itinerary.title,
+1300:                                       style: const TextStyle(
+1301:                                         fontSize: 14.5,
+1302:                                         fontWeight: FontWeight.w900,
+1303:                                         color: Color(0xFF0F172A),
+1304:                                       ),
+1305:                                       maxLines: 1,
+1306:                                       overflow: TextOverflow.ellipsis,
+1307:                                     ),
+1308:                                   ),
+1309:                                   const SizedBox(width: 3),
+1310:                                   const Icon(Icons.edit_rounded, size: 12, color: Color(0xFF94A3B8)),
+1311:                                 ],
+1312:                               ),
+1313:                             ),
+1314:                           ],
+1315:                         ),
+1316:                       ),
+1317: 
+1318:                       // Members Chip (Share_Locations Member Modal)
+1319:                       InkWell(
+1320:                         onTap: _openMembersSheet,
+1321:                         borderRadius: BorderRadius.circular(8),
+1322:                         child: Container(
+1323:                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+1324:                           decoration: BoxDecoration(
+1325:                             color: const Color(0xFFF8FAFC),
+1326:                             borderRadius: BorderRadius.circular(8),
+1327:                             border: Border.all(color: const Color(0xFFE2E8F0)),
+1328:                           ),
+1329:                           child: Row(
+1330:                             mainAxisSize: MainAxisSize.min,
+1331:                             children: [
+1332:                               const Icon(Icons.group_rounded, size: 13, color: Color(0xFF64748B)),
+1333:                               const SizedBox(width: 3),
+1334:                               Text(
+1335:                                 '${members.isNotEmpty ? members.length : 1}',
+1336:                                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+1337:                               ),
+1338:                             ],
+1339:                           ),
+1340:                         ),
+1341:                       ),
+1342:                       const SizedBox(width: 4),
+1343: 
+1344:                       // Save Button (Share_Locations Save Button)
+1345:                       InkWell(
+1346:                         onTap: _isSaving ? null : _saveTripChanges,
+1347:                         borderRadius: BorderRadius.circular(8),
+1348:                         child: Container(
+1349:                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+1350:                           decoration: BoxDecoration(
+1351:                             color: _hasUnsavedChanges ? const Color(0xFF065F46) : Colors.white,
+1352:                             borderRadius: BorderRadius.circular(8),
+1353:                             border: Border.all(color: _hasUnsavedChanges ? const Color(0xFF065F46) : const Color(0xFFCBD5E1)),
+1354:                           ),
+1355:                           child: Row(
+1356:                             mainAxisSize: MainAxisSize.min,
+1357:                             children: [
+1358:                               if (_isSaving)
+1359:                                 const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+1360:                               else
+1361:                                 Icon(Icons.save_rounded, size: 13, color: _hasUnsavedChanges ? Colors.white : const Color(0xFF475569)),
+1362:                               const SizedBox(width: 3),
+1363:                               Text(
+1364:                                 _isSaving
+1365:                                     ? 'Đang lưu...'
+1366:                                     : (_hasUnsavedChanges ? 'Lưu *' : 'Đã lưu'),
+1367:                                 style: TextStyle(
+1368:                                   fontSize: 11,
+1369:                                   fontWeight: FontWeight.w800,
+1370:                                   color: _hasUnsavedChanges ? Colors.white : const Color(0xFF475569),
+1371:                                 ),
+1372:                               ),
+1373:                             ],
+1374:                           ),
+1375:                         ),
+1376:                       ),
+1377:                     ],
+1378:                   ),
+1379: 
+1380:                   const SizedBox(height: 5),
+1381: 
+1382:                   // Row 2: Stats (Total Stops, Cost, Target Budget & Percentage Bar, Trip Date & Days)
+1383:                   SingleChildScrollView(
+1384:                     scrollDirection: Axis.horizontal,
+1385:                     physics: const BouncingScrollPhysics(),
+1386:                     child: Row(
+1387:                       children: [
+1388:                         // 1. Total stops & cost
+1389:                         Row(
+1390:                           mainAxisSize: MainAxisSize.min,
+1391:                           children: [
+1392:                             const Text('Tổng điểm dừng: ', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+1393:                             Text('${_itinerary.stopCount} điểm', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+1394:                             const SizedBox(width: 6),
+1395:                             const Text('Chi phí dự tính: ', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
+1396:                             Text(
+1397:                               totalCost > 0
+1398:                                   ? '${totalCost.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
+1399:                                   : _itinerary.estimatedCost,
+1400:                               style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Color(0xFF065F46)),
+1401:                             ),
+1402:                           ],
+1403:                         ),
+1404:                         const SizedBox(width: 8),
+1405: 
+1406:                         // 2. Target Budget Pill (Share_Locations Budget Manager)
+1407:                         InkWell(
+1408:                           onTap: () {
+1409:                             if (!canEditStops) {
+1410:                               _showPermissionDeniedSnackBar('Bạn đang ở chế độ xem. Không có quyền điều chỉnh ngân sách.');
+1411:                               return;
+1412:                             }
+1413:                             ItineraryBudgetSheet.show(
+1414:                               context,
+1415:                               itinerary: _itinerary,
+1416:                               onBudgetChanged: (newBudget) {
+1417:                                 setState(() {
+1418:                                   _itinerary = _itinerary.copyWith(budgetTarget: newBudget);
+1419:                                   _hasUnsavedChanges = true;
+1420:                                 });
+1421:                               },
+1422:                             );
+1423:                           },
+1424:                           borderRadius: BorderRadius.circular(6),
+1425:                           child: Container(
+1426:                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+1427:                             decoration: BoxDecoration(
+1428:                               color: isOverBudget ? const Color(0xFFFFF1F2) : const Color(0xFFF0FDF4),
+1429:                               borderRadius: BorderRadius.circular(6),
+1430:                               border: Border.all(color: isOverBudget ? const Color(0xFFFECDD3) : const Color(0xFFBBF7D0)),
+1431:                             ),
+1432:                             child: Row(
+1433:                               mainAxisSize: MainAxisSize.min,
+1434:                               children: [
+1435:                                 Icon(Icons.attach_money_rounded, size: 12, color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF065F46)),
+1436:                                 const SizedBox(width: 1),
+1437:                                 Text(
+1438:                                   'Ngân sách đề ra: ${(budgetTarget / 1000000).toStringAsFixed(1)}tr',
+1439:                                   style: TextStyle(
+1440:                                     fontSize: 10,
+1441:                                     fontWeight: FontWeight.w800,
+1442:                                     color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF065F46),
+1443:                                   ),
+1444:                                 ),
+1445:                                 const SizedBox(width: 2),
+1446:                                 const Icon(Icons.edit_outlined, size: 9, color: Color(0xFF94A3B8)),
+1447:                                 const SizedBox(width: 4),
+1448:                                 // Mini Progress Bar
+1449:                                 ClipRRect(
+1450:                                   borderRadius: BorderRadius.circular(3),
+1451:                                   child: Container(
+1452:                                     width: 28,
+1453:                                     height: 5,
+1454:                                     color: const Color(0xFFE2E8F0),
+1455:                                     child: FractionallySizedBox(
+1456:                                       alignment: Alignment.centerLeft,
+1457:                                       widthFactor: (percentUsed / 100).clamp(0.0, 1.0),
+1458:                                       child: Container(color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF065F46)),
+1459:                                     ),
+1460:                                   ),
+1461:                                 ),
+1462:                                 const SizedBox(width: 3),
+1463:                                 Text(
+1464:                                   '$percentUsed%',
+1465:                                   style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF64748B)),
+1466:                                 ),
+1467:                                 const SizedBox(width: 4),
+1468:                                 Container(
+1469:                                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+1470:                                   decoration: BoxDecoration(
+1471:                                     color: isOverBudget ? const Color(0xFFFFE4E6) : const Color(0xFFDCFCE7),
+1472:                                     borderRadius: BorderRadius.circular(4),
+1473:                                   ),
+1474:                                   child: Text(
+1475:                                     isOverBudget
+1476:                                         ? 'Vượt ${(totalCost - budgetTarget).toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
+1477:                                         : 'Còn ${(budgetTarget - totalCost).toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ',
+1478:                                     style: TextStyle(
+1479:                                       fontSize: 9,
+1480:                                       fontWeight: FontWeight.w800,
+1481:                                       color: isOverBudget ? const Color(0xFFBE123C) : const Color(0xFF15803D),
+1482:                                     ),
+1483:                                   ),
+1484:                                 ),
+1485:                               ],
+1486:                             ),
+1487:                           ),
+1488:                         ),
+1489:                         const SizedBox(width: 6),
+1490: 
+1491:                         // 3. Trip Date Pill (Thời gian: Chưa đặt ngày ✏️ [2 ngày])
+1492:                         InkWell(
+1493:                           onTap: _showTripDatePicker,
+1494:                           borderRadius: BorderRadius.circular(6),
+1495:                           child: Container(
+1496:                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+1497:                             decoration: BoxDecoration(
+1498:                               color: const Color(0xFFF8FAFC),
+1499:                               borderRadius: BorderRadius.circular(6),
+1500:                               border: Border.all(color: const Color(0xFFE2E8F0)),
+1501:                             ),
+1502:                             child: Row(
+1503:                               mainAxisSize: MainAxisSize.min,
+1504:                               children: [
+1505:                                 const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFF64748B)),
+1506:                                 const SizedBox(width: 3),
+1507:                                 const Text('Thời gian: ', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+1508:                                 Text(
+1509:                                   _formattedTripDateText,
+1510:                                   style: TextStyle(
+1511:                                     fontSize: 10,
+1512:                                     fontWeight: FontWeight.w800,
+1513:                                     color: _itinerary.startDate != null && _itinerary.startDate!.isNotEmpty ? const Color(0xFF0F172A) : const Color(0xFF475569),
+1514:                                   ),
+1515:                                 ),
+1516:                                 const SizedBox(width: 2),
+1517:                                 const Icon(Icons.edit_outlined, size: 9, color: Color(0xFF94A3B8)),
+1518:                                 const SizedBox(width: 4),
+1519:                                 Container(
+1520:                                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+1521:                                   decoration: BoxDecoration(
+1522:                                     color: const Color(0xFFF1F5F9),
+1523:                                     borderRadius: BorderRadius.circular(4),
+1524:                                   ),
+1525:                                   child: Text(
+1526:                                     '${_itinerary.daysCount} ngày',
+1527:                                     style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF475569)),
+1528:                                   ),
+1529:                                 ),
+1530:                               ],
+1531:                             ),
+1532:                           ),
+1533:                         ),
+1534:                       ],
+1535:                     ),
+1536:                   ),
+1537:                 ],
+1538:               ),
+1539:             ),
+1540:           ),
+1541:         ),
+1542:       ),
+1543:       body: SingleChildScrollView(
+1544:         padding: const EdgeInsets.fromLTRB(16, 14, 16, 40),
+1545:         child: Column(
+1546:           crossAxisAlignment: CrossAxisAlignment.start,
+1547:           children: [
+1548:             // Lock / Role Status Banner
+1549:             if (_isPublished) ...[
+1550:               Container(
+1551:                 margin: const EdgeInsets.only(bottom: 12),
+1552:                 padding: const EdgeInsets.all(12),
+1553:                 decoration: BoxDecoration(
+1554:                   color: const Color(0xFFFFFBEB),
+1555:                   borderRadius: BorderRadius.circular(14),
+1556:                   border: Border.all(color: const Color(0xFFFDE68A)),
+1557:                 ),
+1558:                 child: Row(
+1559:                   crossAxisAlignment: CrossAxisAlignment.start,
+1560:                   children: [
+1561:                     const Padding(
+1562:                       padding: EdgeInsets.only(top: 2),
+1563:                       child: Icon(Icons.lock_outline_rounded, size: 20, color: Color(0xFFD97706)),
+1564:                     ),
+1565:                     const SizedBox(width: 10),
+1566:                     Expanded(
+1567:                       child: Column(
+1568:                         crossAxisAlignment: CrossAxisAlignment.start,
+1569:                         children: [
+1570:                           const Text(
+1571:                             'Chế độ Chỉ xem sau khi xuất bản:',
+1572:                             style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
+1573:                           ),
+1574:                           const SizedBox(height: 2),
+1575:                           const Text(
+1576:                             'Chuyến đi đã được xuất bản công khai và khóa ở chế độ chỉ xem. Bạn (và các thành viên) không thể chỉnh sửa điểm dừng, ngày đi hoặc mời thêm thành viên nữa.',
+1577:                             style: TextStyle(fontSize: 11, color: Color(0xFFB45309), height: 1.35),
+1578:                           ),
+1579:                           if (isOwner) ...[
+1580:                             const SizedBox(height: 6),
+1581:                             InkWell(
+1582:                               onTap: _togglePublish,
+1583:                               child: Row(
+1584:                                 mainAxisSize: MainAxisSize.min,
+1585:                                 children: const [
+1586:                                   Icon(Icons.lock_open_rounded, size: 13, color: Color(0xFF065F46)),
+1587:                                   SizedBox(width: 4),
+1588:                                   Text(
+1589:                                     'Hủy xuất bản để mở khóa chỉnh sửa',
+1590:                                     style: TextStyle(
+1591:                                       fontSize: 11.5,
+1592:                                       fontWeight: FontWeight.w800,
+1593:                                       color: Color(0xFF065F46),
+1594:                                       decoration: TextDecoration.underline,
+1595:                                     ),
+1596:                                   ),
+1597:                                 ],
+1598:                               ),
+1599:                             ),
+1600:                           ],
+1601:                         ],
+1602:                       ),
+1603:                     ),
+1604:                   ],
+1605:                 ),
+1606:               ),
+1607:             ] else if (isViewer) ...[
+1608:               Container(
+1609:                 margin: const EdgeInsets.only(bottom: 12),
+1610:                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+1611:                 decoration: BoxDecoration(
+1612:                   color: const Color(0xFFEFF6FF),
+1613:                   borderRadius: BorderRadius.circular(14),
+1614:                   border: Border.all(color: const Color(0xFFBFDBFE)),
+1615:                 ),
+1616:                 child: Row(
+1617:                   children: [
+1618:                     const Icon(Icons.visibility_outlined, size: 20, color: Color(0xFF2563EB)),
+1619:                     const SizedBox(width: 10),
+1620:                     Expanded(
+1621:                       child: Column(
+1622:                         crossAxisAlignment: CrossAxisAlignment.start,
+1623:                         children: const [
+1624:                           Text(
+1625:                             'Chế độ xem (Thành viên)',
+1626:                             style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1E40AF)),
+1627:                           ),
+1628:                           SizedBox(height: 2),
+1629:                           Text(
+1630:                             'Bạn có quyền xem và theo dõi toàn bộ lịch trình nhưng không thể chỉnh sửa điểm dừng.',
+1631:                             style: TextStyle(fontSize: 11, color: Color(0xFF3B82F6), height: 1.3),
+1632:                           ),
+1633:                         ],
+1634:                       ),
+1635:                     ),
+1636:                   ],
+1637:                 ),
+1638:               ),
+1639:             ] else if (isEditor) ...[
+1640:               Container(
+1641:                 margin: const EdgeInsets.only(bottom: 12),
+1642:                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+1643:                 decoration: BoxDecoration(
+1644:                   color: const Color(0xFFECFDF5),
+1645:                   borderRadius: BorderRadius.circular(14),
+1646:                   border: Border.all(color: const Color(0xFFA7F3D0)),
+1647:                 ),
+1648:                 child: Row(
+1649:                   children: [
+1650:                     const Icon(Icons.edit_calendar_rounded, size: 20, color: Color(0xFF059669)),
+1651:                     const SizedBox(width: 10),
+1652:                     Expanded(
+1653:                       child: Column(
+1654:                         crossAxisAlignment: CrossAxisAlignment.start,
+1655:                         children: const [
+1656:                           Text(
+1657:                             'Chế độ cùng lên lịch',
+1658:                             style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
+1659:                           ),
+1660:                           SizedBox(height: 2),
+1661:                           Text(
+1662:                             'Bạn có toàn quyền thêm, sửa, xóa điểm dừng và ngày nhưng không thể công bố chuyến đi hoặc thêm thành viên khác.',
+1663:                             style: TextStyle(fontSize: 11, color: Color(0xFF047857), height: 1.3),
+1664:                           ),
+1665:                         ],
+1666:                       ),
+1667:                     ),
+1668:                   ],
+1669:                 ),
+1670:               ),
+1671:             ],
+1672: 
+1673:             // Filter & Quick Add Toolbar (Matching Share_Locations ItineraryFilterBar.tsx)
+1674:             Container(
+1675:               padding: const EdgeInsets.all(10),
+1676:               decoration: BoxDecoration(
+1677:                 color: Colors.white,
+1678:                 borderRadius: BorderRadius.circular(16),
+1679:                 border: Border.all(color: const Color(0xFFE2E8F0)),
+1680:                 boxShadow: [
+1681:                   BoxShadow(
+1682:                     color: Colors.black.withValues(alpha: 0.02),
+1683:                     blurRadius: 6,
+1684:                     offset: const Offset(0, 2),
+1685:                   ),
+1686:                 ],
+1687:               ),
+1688:               child: Row(
+1689:                 children: [
+1690:                   // Search places in trip
+1691:                   Expanded(
+1692:                     child: Container(
+1693:                       padding: const EdgeInsets.symmetric(horizontal: 8),
+1694:                       decoration: BoxDecoration(
+1695:                         color: const Color(0xFFF8FAFC),
+1696:                         borderRadius: BorderRadius.circular(10),
+1697:                         border: Border.all(color: const Color(0xFFE2E8F0)),
+1698:                       ),
+1699:                       child: Row(
+1700:                         children: [
+1701:                           const Icon(Icons.search_rounded, size: 15, color: Color(0xFF94A3B8)),
+1702:                           const SizedBox(width: 4),
+1703:                           Expanded(
+1704:                             child: TextField(
+1705:                               onChanged: (val) => setState(() => _searchQuery = val),
+1706:                               style: const TextStyle(fontSize: 11.5),
+1707:                               decoration: const InputDecoration(
+1708:                                 hintText: 'Tìm địa điểm, món ăn...',
+1709:                                 hintStyle: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+1710:                                 border: InputBorder.none,
+1711:                                 isDense: true,
+1712:                                 contentPadding: EdgeInsets.symmetric(vertical: 6),
+1713:                               ),
+1714:                             ),
+1715:                           ),
+1716:                           if (_searchQuery.isNotEmpty)
+1717:                             IconButton(
+1718:                               icon: const Icon(Icons.clear_rounded, size: 13, color: Color(0xFF94A3B8)),
+1719:                               onPressed: () => setState(() => _searchQuery = ''),
+1720:                               padding: EdgeInsets.zero,
+1721:                               constraints: const BoxConstraints(),
+1722:                             ),
+1723:                         ],
+1724:                       ),
+1725:                     ),
+1726:                   ),
+1727:                   const SizedBox(width: 6),
+1728: 
+1729:                   // Expand/Collapse All Days
+1730:                   InkWell(
+1731:                     onTap: _toggleAllDays,
+1732:                     borderRadius: BorderRadius.circular(8),
+1733:                     child: Container(
+1734:                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+1735:                       decoration: BoxDecoration(
+1736:                         color: const Color(0xFFF8FAFC),
+1737:                         borderRadius: BorderRadius.circular(8),
+1738:                         border: Border.all(color: const Color(0xFFE2E8F0)),
+1739:                       ),
+1740:                       child: Row(
+1741:                         mainAxisSize: MainAxisSize.min,
+1742:                         children: [
+1743:                           Icon(isAllExpanded ? Icons.unfold_less_rounded : Icons.unfold_more_rounded, size: 13, color: const Color(0xFF475569)),
+1744:                           const SizedBox(width: 3),
+1745:                           Text(
+1746:                             isAllExpanded ? 'Thu gọn' : 'Mở rộng',
+1747:                             style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+1748:                           ),
+1749:                         ],
+1750:                       ),
+1751:                     ),
+1752:                   ),
+1753:                   const SizedBox(width: 6),
+1754: 
+1755:                   // Add Day Button
+1756:                   ElevatedButton.icon(
+1757:                     onPressed: _handleAddNewDay,
+1758:                     icon: const Icon(Icons.add_rounded, size: 13),
+1759:                     label: const Text('Thêm ngày', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+1760:                     style: ElevatedButton.styleFrom(
+1761:                       backgroundColor: const Color(0xFF065F46),
+1762:                       foregroundColor: Colors.white,
+1763:                       elevation: 0,
+1764:                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+1765:                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+1766:                       minimumSize: Size.zero,
+1767:                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+1768:                     ),
+1769:                   ),
+1770:                 ],
+1771:               ),
+1772:             ),
+1773: 
+1774:             const SizedBox(height: 16),
+1775: 
+1776:             if (_itinerary.days.isEmpty)
+1777:               Container(
+1778:                 width: double.infinity,
+1779:                 padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+1780:                 decoration: BoxDecoration(
+1781:                   color: Colors.white,
+1782:                   borderRadius: BorderRadius.circular(18),
+1783:                   border: Border.all(color: const Color(0xFFE2E8F0)),
+1784:                   boxShadow: [
+1785:                     BoxShadow(
+1786:                       color: Colors.black.withValues(alpha: 0.02),
+1787:                       blurRadius: 8,
+1788:                       offset: const Offset(0, 2),
+1789:                     ),
+1790:                   ],
+1791:                 ),
+1792:                 child: Column(
+1793:                   children: [
+1794:                     Container(
+1795:                       padding: const EdgeInsets.all(16),
+1796:                       decoration: const BoxDecoration(
+1797:                         color: Color(0xFFD1FAE5),
+1798:                         shape: BoxShape.circle,
+1799:                       ),
+1800:                       child: const Icon(Icons.add_location_alt_rounded, size: 36, color: Color(0xFF065F46)),

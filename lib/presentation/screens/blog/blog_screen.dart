@@ -30,10 +30,24 @@ class _BlogScreenState extends State<BlogScreen> {
   bool _isLoading = true;
   int _displayCount = 9;
 
-  // Selected category matching Screenshot 2 (single-select with underline)
   String _selectedCategory = 'all';
 
-  final List<String> _categories = const [
+  final List<Map<String, dynamic>> _categoryTabs = const [
+    {'id': 'all', 'label': 'Tất cả', 'icon': Icons.auto_awesome_rounded},
+    {'id': 'Nhà hàng & Quán ăn', 'label': 'Ẩm thực', 'icon': Icons.restaurant_rounded},
+    {'id': 'Cà phê & Tráng miệng', 'label': 'Cà phê', 'icon': Icons.coffee_rounded},
+    {'id': 'Danh lam thắng cảnh', 'label': 'Danh lam', 'icon': Icons.landscape_rounded},
+    {'id': 'Homestay & Farmstay', 'label': 'Homestay', 'icon': Icons.cottage_rounded},
+    {'id': 'Khách sạn & Resort', 'label': 'Resort', 'icon': Icons.hotel_rounded},
+    {'id': 'Di tích & Tâm linh', 'label': 'Di tích', 'icon': Icons.temple_buddhist_rounded},
+    {'id': 'Đặc sản & Quà lưu niệm', 'label': 'Đặc sản', 'icon': Icons.card_giftcard_rounded},
+    {'id': 'Chợ & Phố đi bộ', 'label': 'Phố đi bộ', 'icon': Icons.storefront_rounded},
+    {'id': 'Khu vui chơi giải trí', 'label': 'Vui chơi', 'icon': Icons.attractions_rounded},
+    {'id': 'Khu sinh thái & Nông trại', 'label': 'Sinh thái', 'icon': Icons.eco_rounded},
+    {'id': 'Villa & Hostel', 'label': 'Villa', 'icon': Icons.villa_rounded},
+  ];
+
+  final List<String> _allCategoryNames = const [
     'Đặc sản & Quà lưu niệm',
     'Homestay & Farmstay',
     'Khu vui chơi giải trí',
@@ -174,162 +188,91 @@ class _BlogScreenState extends State<BlogScreen> {
     });
   }
 
+  void _showCategoryPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _CategoryPickerSheet(
+        categories: _allCategoryNames,
+        selectedCategory: _selectedCategory,
+        onSelect: (cat) {
+          setState(() => _selectedCategory = cat);
+          _loadBlogs();
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final visibleArticles = _blogs.take(_displayCount).toList();
     final hasMore = visibleArticles.length < _blogs.length;
     final canPop = Navigator.canPop(context);
 
+    // Filter featured stories for the highlight carousel (only when in "all" tab and no query)
+    final isHomeState = _selectedCategory == 'all' && _searchController.text.trim().isEmpty;
+    final trendingBlogs = isHomeState ? _blogs.take(4).toList() : <BlogModel>[];
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        automaticallyImplyLeading: canPop,
-        leading: canPop
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
-                onPressed: () => Navigator.pop(context),
-              )
-            : null,
-        title: const Text(
-          'Cẩm nang du lịch',
-          style: TextStyle(color: Color(0xFF0F172A), fontSize: 16.5, fontWeight: FontWeight.w800),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: ElevatedButton.icon(
-              onPressed: _openBlogEditor,
-              icon: const Icon(Icons.edit_note_rounded, size: 17),
-              label: const Text('Viết bài', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF047857),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      body: SafeArea(
+        top: true,
+        child: RefreshIndicator(
+          color: const Color(0xFF059669),
+          onRefresh: _loadBlogs,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            slivers: [
+              // 1. Top Bar with "Viết bài" button
+              SliverToBoxAdapter(
+                child: _buildTopBar(canPop),
               ),
-            ),
-          ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(color: const Color(0xFFE2E8F0), height: 1),
-        ),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadBlogs,
-        color: const Color(0xFF047857),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Redesigned Hero Filter Card (Matching Screenshot 2)
-              _buildHeroFilterCard(),
 
-              // Section Header: "Khám phá cẩm nang du lịch" (Matching Screenshot 2)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Khám phá cẩm nang du lịch',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF0F172A),
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    if (_blogs.isNotEmpty)
-                      Text(
-                        '${_blogs.length} bài viết',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                  ],
+              // 2. Floating Search Capsule
+              SliverToBoxAdapter(
+                child: _buildSearchCapsule(),
+              ),
+
+              // 3. Horizontal Category Tabs (Airbnb / Medium Style)
+              SliverToBoxAdapter(
+                child: _buildCategoryTabsBar(),
+              ),
+
+              // 4. Trending Highlights Carousel (Only in home state)
+              if (trendingBlogs.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildTrendingCarousel(trendingBlogs),
                 ),
+
+              // 5. Results Counter & Active Filter Pills
+              SliverToBoxAdapter(
+                child: _buildResultsSummary(_blogs.length),
               ),
 
-              // Blog Feed Content
+              // 6. Blog Feed Content or Empty State
               if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 48),
+                const SliverFillRemaining(
+                  hasScrollBody: false,
                   child: Center(
-                    child: CircularProgressIndicator(color: Color(0xFF047857)),
+                    child: CircularProgressIndicator(color: Color(0xFF059669)),
                   ),
                 )
               else if (_blogs.isEmpty)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFF1F5F9),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.visibility_off_outlined, size: 36, color: Color(0xFF94A3B8)),
-                      ),
-                      const SizedBox(height: 14),
-                      const Text(
-                        'Không tìm thấy bài viết nào phù hợp',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Không có bài viết nào khớp với các tiêu chí tìm kiếm hiện tại. Bạn có thể thử đặt lại bộ lọc để khám phá toàn bộ cẩm nang.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.45),
-                      ),
-                      if (_hasActiveFilters) ...[
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: _resetFilters,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF047857),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          child: const Text('Đặt lại bộ lọc', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12.5)),
-                        ),
-                      ],
-                    ],
-                  ),
+                SliverToBoxAdapter(
+                  child: _buildEmptyState(),
                 )
               else
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ListView.separated(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: visibleArticles.length,
-                        separatorBuilder: (context, index) => const SizedBox(height: 14),
-                        itemBuilder: (context, index) {
-                          final b = visibleArticles[index];
-                          return BlogCardWidget(
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 36),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final b = visibleArticles[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: BlogCardWidget(
                             blog: b,
                             onTap: () => _openBlogDetail(b),
                             onQuickPreview: () => BlogDetailModal.show(
@@ -340,260 +283,729 @@ class _BlogScreenState extends State<BlogScreen> {
                             ),
                             onToggleLike: () => _toggleLike(b),
                             onToggleSave: () => _toggleSave(b),
-                          );
-                        },
-                      ),
-
-                      if (hasMore) ...[
-                        const SizedBox(height: 18),
-                        Center(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              setState(() {
-                                _displayCount += 6;
-                              });
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF047857),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Text(
-                              'Xem thêm bài viết',
-                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800),
-                            ),
                           ),
+                        );
+                      },
+                      childCount: visibleArticles.length,
+                    ),
+                  ),
+                ),
+
+              // 7. Load more button
+              if (!_isLoading && hasMore)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 36),
+                    child: Center(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            _displayCount += 6;
+                          });
+                        },
+                        icon: const Icon(Icons.expand_more_rounded, size: 18),
+                        label: const Text(
+                          'Xem thêm bài viết',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
                         ),
-                      ],
-                    ],
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFF059669),
+                          elevation: 0,
+                          side: const BorderSide(color: Color(0xFFA7F3D0)),
+                          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
             ],
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openBlogEditor,
-        backgroundColor: const Color(0xFF047857),
-        elevation: 3,
-        icon: const Icon(Icons.edit_note_rounded, color: Colors.white, size: 20),
-        label: const Text(
-          'Viết cẩm nang',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+    );
+  }
+
+  /// Top Bar with Title and "Viết bài" CTA
+  Widget _buildTopBar(bool canPop) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              if (canPop) ...[
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'Cẩm Nang Du Lịch',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.4,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Bí quyết & Góc nhìn chân thực từ cộng đồng',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // Viết bài CTA button
+          InkWell(
+            onTap: _openBlogEditor,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFA7F3D0)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF059669)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Viết bài',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF065F46),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Floating Capsule Search Bar
+  Widget _buildSearchCapsule() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Container(
+        height: 50,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 14),
+            const Icon(Icons.search_rounded, color: Color(0xFF059669), size: 21),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                onChanged: _onSearchChanged,
+                onSubmitted: (_) => _loadBlogs(),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
+                decoration: InputDecoration(
+                  hintText: 'Tìm cẩm nang, ẩm thực, kinh nghiệm...',
+                  hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+                  border: InputBorder.none,
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 17, color: Color(0xFF94A3B8)),
+                          onPressed: () {
+                            _searchController.clear();
+                            _loadBlogs();
+                          },
+                        )
+                      : null,
+                ),
+              ),
+            ),
+
+            // Vertical divider
+            Container(height: 24, width: 1, color: const Color(0xFFE2E8F0)),
+            const SizedBox(width: 4),
+
+            // Category picker trigger
+            InkWell(
+              onTap: _showCategoryPicker,
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.tune_rounded,
+                      size: 19,
+                      color: _selectedCategory != 'all' ? const Color(0xFF059669) : const Color(0xFF475569),
+                    ),
+                    if (_selectedCategory != 'all') ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.all(4.5),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF059669),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Text(
+                          '1',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
         ),
       ),
     );
   }
 
-  /// Redesigned Hero Filter Card matching Screenshot 2:
-  /// - "Góc nhìn cẩm nang."
-  /// - 2 Description paragraphs
-  /// - Search input with "Tìm" green button
-  /// - "Danh mục" header with 3-column category list
-  /// - Selected category has green bold text with underline
-  Widget _buildHeroFilterCard() {
+  /// Horizontal Category Chips Bar (Airbnb / Medium Style)
+  Widget _buildCategoryTabsBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          children: _categoryTabs.map((tab) {
+            final isSel = _selectedCategory == tab['id'];
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _selectedCategory = tab['id'] as String;
+                  });
+                  _loadBlogs();
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSel ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSel ? const Color(0xFF0F172A) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        tab['icon'] as IconData,
+                        size: 15,
+                        color: isSel ? Colors.white : const Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        tab['label'] as String,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
+                          color: isSel ? Colors.white : const Color(0xFF334155),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  /// Trending Stories Carousel (Highlight Horizontal Cards)
+  Widget _buildTrendingCarousel(List<BlogModel> trending) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text(
+                '🔥 Cẩm nang thịnh hành',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Horizontal Trending Cards
+          SizedBox(
+            height: 140,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              itemCount: trending.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final b = trending[index];
+                final coverUrl = b.imageUrl.isNotEmpty ? b.imageUrl : 'https://images.unsplash.com/photo-1528127269322-539801943592?w=600&h=400&fit=crop';
+
+                return InkWell(
+                  onTap: () => _openBlogDetail(b),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    width: 250,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      children: [
+                        // Cover Photo
+                        Positioned.fill(
+                          child: Image.network(
+                            coverUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(color: const Color(0xFFCBD5E1)),
+                          ),
+                        ),
+
+                        // Gradient
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.85),
+                                ],
+                                stops: const [0.2, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // Category & Reading Time (Top)
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              b.category.isNotEmpty ? b.category : 'Cẩm nang',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // Title & Author (Bottom)
+                        Positioned(
+                          bottom: 8,
+                          left: 10,
+                          right: 10,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                b.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.25,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Row(
+                                children: [
+                                  Text(
+                                    b.authorName.isNotEmpty ? b.authorName : 'Tác giả',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.85),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '• ${b.readTimeMinutes} phút đọc',
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.7),
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Results summary row & active filter indicators
+  Widget _buildResultsSummary(int count) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Khám phá $count bài viết',
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              if (_hasActiveFilters) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                  ),
+                  child: Text(
+                    _selectedCategory != 'all' ? _selectedCategory : 'Đang lọc',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF065F46),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+
+          if (_hasActiveFilters)
+            InkWell(
+              onTap: _resetFilters,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.refresh_rounded, size: 14, color: Color(0xFFE11D48)),
+                    SizedBox(width: 3),
+                    Text(
+                      'Xóa bộ lọc',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFE11D48),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Empty state illustration & reset button
+  Widget _buildEmptyState() {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: const BoxDecoration(
+              color: Color(0xFFECFDF5),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.auto_stories_rounded, size: 40, color: Color(0xFF059669)),
+          ),
+          const SizedBox(height: 16),
           const Text(
-            'Góc nhìn cẩm nang.',
+            'Không tìm thấy cẩm nang phù hợp',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 23,
+              fontSize: 16,
               fontWeight: FontWeight.w900,
               color: Color(0xFF0F172A),
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // Description 1
-          const Text(
-            'Tổng hợp kinh nghiệm thực tế, cẩm nang ẩm thực và góc nhìn đa chiều từ những người đi trước.',
-            style: TextStyle(
-              fontSize: 12.5,
-              color: Color(0xFF475569),
-              height: 1.45,
             ),
           ),
           const SizedBox(height: 6),
-
-          // Description 2
           const Text(
-            'Bỏ túi những mẹo du lịch hữu ích theo từng mùa để chuyến đi của bạn luôn trọn vẹn và an tâm nhất.',
+            'Không có bài viết nào khớp với từ khóa hoặc danh mục đã chọn. Thử tìm với từ khóa khác hoặc đặt lại bộ lọc để khám phá toàn bộ cẩm nang.',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 11.5,
+              fontSize: 12.5,
               color: Color(0xFF64748B),
               height: 1.45,
             ),
           ),
-          const SizedBox(height: 14),
-
-          // Search Box with "Tìm" button (Matching Screenshot 2)
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: _onSearchChanged,
-                    onSubmitted: (_) => _loadBlogs(),
-                    style: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A)),
-                    decoration: const InputDecoration(
-                      hintText: 'Tìm kiếm cẩm nang, ẩm thực, kinh nghiệm...',
-                      hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                      prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF94A3B8), size: 18),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(right: 5),
-                  child: ElevatedButton(
-                    onPressed: _loadBlogs,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF047857),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                    ),
-                    child: const Text('Tìm', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                  ),
-                ),
-              ],
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _resetFilters,
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Đặt lại bộ lọc'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF059669),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              elevation: 0,
             ),
           ),
-
-          const SizedBox(height: 18),
-          const Divider(color: Color(0xFFF1F5F9), height: 1),
-          const SizedBox(height: 16),
-
-          // Header: "Danh mục"
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Danh mục',
-                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-              ),
-              if (_selectedCategory != 'all')
-                InkWell(
-                  onTap: _resetFilters,
-                  child: const Text(
-                    'Xem tất cả',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF047857), fontWeight: FontWeight.w700),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Categories Container - arranged with underline options matching Screenshot 2
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFAFAFA),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFF1F5F9)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildUnderlineOption(
-                  label: 'Tất cả danh mục',
-                  isSelected: _selectedCategory == 'all',
-                  onTap: () {
-                    setState(() => _selectedCategory = 'all');
-                    _loadBlogs();
-                  },
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 10,
-                  children: _categories.map((cat) {
-                    return _buildUnderlineOption(
-                      label: cat,
-                      isSelected: _selectedCategory == cat,
-                      onTap: () {
-                        setState(() => _selectedCategory = cat);
-                        _loadBlogs();
-                      },
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
-
-          if (_hasActiveFilters) ...[
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _resetFilters,
-                icon: const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFFE11D48)),
-                label: const Text('Đặt lại bộ lọc', style: TextStyle(fontSize: 11.5, color: Color(0xFFE11D48), fontWeight: FontWeight.w700)),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
+}
 
-  Widget _buildUnderlineOption({
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(4),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-          color: isSelected ? const Color(0xFF047857) : const Color(0xFF475569),
-          decoration: isSelected ? TextDecoration.underline : TextDecoration.none,
-          decorationColor: const Color(0xFF047857),
-          decorationThickness: 2,
-        ),
+/// Category Picker BottomSheet with Search & Selection Tiles
+class _CategoryPickerSheet extends StatefulWidget {
+  final List<String> categories;
+  final String selectedCategory;
+  final ValueChanged<String> onSelect;
+
+  const _CategoryPickerSheet({
+    required this.categories,
+    required this.selectedCategory,
+    required this.onSelect,
+  });
+
+  @override
+  State<_CategoryPickerSheet> createState() => _CategoryPickerSheetState();
+}
+
+class _CategoryPickerSheetState extends State<_CategoryPickerSheet> {
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _search.trim().toLowerCase();
+    final filtered = widget.categories.where((c) {
+      if (query.isEmpty) return true;
+      return c.toLowerCase().contains(query);
+    }).toList();
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.72,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle
+          const SizedBox(height: 10),
+          Container(
+            width: 38,
+            height: 4.5,
+            decoration: BoxDecoration(
+              color: const Color(0xFFCBD5E1),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Chọn Danh Mục Cẩm Nang',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 21, color: Color(0xFF64748B)),
+                  onPressed: () => Navigator.pop(context),
+                  tooltip: 'Đóng',
+                ),
+              ],
+            ),
+          ),
+
+          // Search Field
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: TextField(
+                onChanged: (val) => setState(() => _search = val),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
+                decoration: const InputDecoration(
+                  hintText: 'Tìm kiếm chủ đề, danh mục...',
+                  hintStyle: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                  prefixIcon: Icon(Icons.search_rounded, size: 18, color: Color(0xFF64748B)),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  isDense: true,
+                ),
+              ),
+            ),
+          ),
+
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+          // "Tất cả danh mục" tile
+          ListTile(
+            onTap: () => widget.onSelect('all'),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: widget.selectedCategory == 'all' ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.category_rounded,
+                size: 19,
+                color: widget.selectedCategory == 'all' ? const Color(0xFF059669) : const Color(0xFF64748B),
+              ),
+            ),
+            title: Text(
+              'Tất cả danh mục',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: widget.selectedCategory == 'all' ? FontWeight.w900 : FontWeight.w600,
+                color: widget.selectedCategory == 'all' ? const Color(0xFF059669) : const Color(0xFF0F172A),
+              ),
+            ),
+            trailing: widget.selectedCategory == 'all'
+                ? const Icon(Icons.check_circle_rounded, color: Color(0xFF059669), size: 21)
+                : null,
+          ),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+          // List of Categories
+          Expanded(
+            child: ListView.separated(
+              physics: const BouncingScrollPhysics(),
+              itemCount: filtered.length,
+              separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF8FAFC)),
+              itemBuilder: (context, index) {
+                final cat = filtered[index];
+                final isSel = widget.selectedCategory == cat;
+                return ListTile(
+                  onTap: () => widget.onSelect(cat),
+                  leading: Container(
+                    padding: const EdgeInsets.all(7.5),
+                    decoration: BoxDecoration(
+                      color: isSel ? const Color(0xFFECFDF5) : const Color(0xFFF8FAFC),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.folder_outlined,
+                      size: 17,
+                      color: isSel ? const Color(0xFF059669) : const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  title: Text(
+                    cat,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: isSel ? FontWeight.w900 : FontWeight.w500,
+                      color: isSel ? const Color(0xFF059669) : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  trailing: isSel
+                      ? const Icon(Icons.check_rounded, color: Color(0xFF059669), size: 20)
+                      : null,
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

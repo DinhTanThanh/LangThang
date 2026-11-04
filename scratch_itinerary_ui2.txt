@@ -1,0 +1,530 @@
+1671:             ],
+1672: 
+1673:             // Filter & Quick Add Toolbar (Matching Share_Locations ItineraryFilterBar.tsx)
+1674:             Container(
+1675:               padding: const EdgeInsets.all(10),
+1676:               decoration: BoxDecoration(
+1677:                 color: Colors.white,
+1678:                 borderRadius: BorderRadius.circular(16),
+1679:                 border: Border.all(color: const Color(0xFFE2E8F0)),
+1680:                 boxShadow: [
+1681:                   BoxShadow(
+1682:                     color: Colors.black.withValues(alpha: 0.02),
+1683:                     blurRadius: 6,
+1684:                     offset: const Offset(0, 2),
+1685:                   ),
+1686:                 ],
+1687:               ),
+1688:               child: Row(
+1689:                 children: [
+1690:                   // Search places in trip
+1691:                   Expanded(
+1692:                     child: Container(
+1693:                       padding: const EdgeInsets.symmetric(horizontal: 8),
+1694:                       decoration: BoxDecoration(
+1695:                         color: const Color(0xFFF8FAFC),
+1696:                         borderRadius: BorderRadius.circular(10),
+1697:                         border: Border.all(color: const Color(0xFFE2E8F0)),
+1698:                       ),
+1699:                       child: Row(
+1700:                         children: [
+1701:                           const Icon(Icons.search_rounded, size: 15, color: Color(0xFF94A3B8)),
+1702:                           const SizedBox(width: 4),
+1703:                           Expanded(
+1704:                             child: TextField(
+1705:                               onChanged: (val) => setState(() => _searchQuery = val),
+1706:                               style: const TextStyle(fontSize: 11.5),
+1707:                               decoration: const InputDecoration(
+1708:                                 hintText: 'Tìm địa điểm, món ăn...',
+1709:                                 hintStyle: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+1710:                                 border: InputBorder.none,
+1711:                                 isDense: true,
+1712:                                 contentPadding: EdgeInsets.symmetric(vertical: 6),
+1713:                               ),
+1714:                             ),
+1715:                           ),
+1716:                           if (_searchQuery.isNotEmpty)
+1717:                             IconButton(
+1718:                               icon: const Icon(Icons.clear_rounded, size: 13, color: Color(0xFF94A3B8)),
+1719:                               onPressed: () => setState(() => _searchQuery = ''),
+1720:                               padding: EdgeInsets.zero,
+1721:                               constraints: const BoxConstraints(),
+1722:                             ),
+1723:                         ],
+1724:                       ),
+1725:                     ),
+1726:                   ),
+1727:                   const SizedBox(width: 6),
+1728: 
+1729:                   // Expand/Collapse All Days
+1730:                   InkWell(
+1731:                     onTap: _toggleAllDays,
+1732:                     borderRadius: BorderRadius.circular(8),
+1733:                     child: Container(
+1734:                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+1735:                       decoration: BoxDecoration(
+1736:                         color: const Color(0xFFF8FAFC),
+1737:                         borderRadius: BorderRadius.circular(8),
+1738:                         border: Border.all(color: const Color(0xFFE2E8F0)),
+1739:                       ),
+1740:                       child: Row(
+1741:                         mainAxisSize: MainAxisSize.min,
+1742:                         children: [
+1743:                           Icon(isAllExpanded ? Icons.unfold_less_rounded : Icons.unfold_more_rounded, size: 13, color: const Color(0xFF475569)),
+1744:                           const SizedBox(width: 3),
+1745:                           Text(
+1746:                             isAllExpanded ? 'Thu gọn' : 'Mở rộng',
+1747:                             style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+1748:                           ),
+1749:                         ],
+1750:                       ),
+1751:                     ),
+1752:                   ),
+1753:                   const SizedBox(width: 6),
+1754: 
+1755:                   // Add Day Button
+1756:                   ElevatedButton.icon(
+1757:                     onPressed: _handleAddNewDay,
+1758:                     icon: const Icon(Icons.add_rounded, size: 13),
+1759:                     label: const Text('Thêm ngày', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+1760:                     style: ElevatedButton.styleFrom(
+1761:                       backgroundColor: const Color(0xFF065F46),
+1762:                       foregroundColor: Colors.white,
+1763:                       elevation: 0,
+1764:                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+1765:                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+1766:                       minimumSize: Size.zero,
+1767:                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+1768:                     ),
+1769:                   ),
+1770:                 ],
+1771:               ),
+1772:             ),
+1773: 
+1774:             const SizedBox(height: 16),
+1775: 
+1776:             if (_itinerary.days.isEmpty)
+1777:               Container(
+1778:                 width: double.infinity,
+1779:                 padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+1780:                 decoration: BoxDecoration(
+1781:                   color: Colors.white,
+1782:                   borderRadius: BorderRadius.circular(18),
+1783:                   border: Border.all(color: const Color(0xFFE2E8F0)),
+1784:                   boxShadow: [
+1785:                     BoxShadow(
+1786:                       color: Colors.black.withValues(alpha: 0.02),
+1787:                       blurRadius: 8,
+1788:                       offset: const Offset(0, 2),
+1789:                     ),
+1790:                   ],
+1791:                 ),
+1792:                 child: Column(
+1793:                   children: [
+1794:                     Container(
+1795:                       padding: const EdgeInsets.all(16),
+1796:                       decoration: const BoxDecoration(
+1797:                         color: Color(0xFFD1FAE5),
+1798:                         shape: BoxShape.circle,
+1799:                       ),
+1800:                       child: const Icon(Icons.add_location_alt_rounded, size: 36, color: Color(0xFF065F46)),
+1801:                     ),
+1802:                     const SizedBox(height: 14),
+1803:                     const Text(
+1804:                       'Lịch trình chưa có ngày hay địa điểm nào',
+1805:                       style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+1806:                       textAlign: TextAlign.center,
+1807:                     ),
+1808:                     const SizedBox(height: 6),
+1809:                     const Text(
+1810:                       'Hãy tạo ngày đầu tiên và thêm các địa điểm tham quan để bắt đầu thiết kế lịch trình theo ý bạn.',
+1811:                       style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+1812:                       textAlign: TextAlign.center,
+1813:                     ),
+1814:                     const SizedBox(height: 16),
+1815:                     Row(
+1816:                       mainAxisAlignment: MainAxisAlignment.center,
+1817:                       children: [
+1818:                         ElevatedButton.icon(
+1819:                           onPressed: _handleAddNewDay,
+1820:                           icon: const Icon(Icons.calendar_today_rounded, size: 14),
+1821:                           label: const Text('Thêm Ngày 1', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+1822:                           style: ElevatedButton.styleFrom(
+1823:                             backgroundColor: const Color(0xFF065F46),
+1824:                             foregroundColor: Colors.white,
+1825:                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+1826:                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+1827:                           ),
+1828:                         ),
+1829:                         const SizedBox(width: 8),
+1830:                         OutlinedButton.icon(
+1831:                           onPressed: () => _showAddStopOptions(1),
+1832:                           icon: const Icon(Icons.add_location_rounded, size: 14, color: Color(0xFF065F46)),
+1833:                           label: const Text('Thêm điểm dừng', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46))),
+1834:                           style: OutlinedButton.styleFrom(
+1835:                             side: const BorderSide(color: Color(0xFF065F46)),
+1836:                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+1837:                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+1838:                           ),
+1839:                         ),
+1840:                       ],
+1841:                     ),
+1842:                   ],
+1843:                 ),
+1844:               )
+1845:             else if (displayedDays.isEmpty && _searchQuery.isNotEmpty)
+1846:               Container(
+1847:                 width: double.infinity,
+1848:                 padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+1849:                 decoration: BoxDecoration(
+1850:                   color: Colors.white,
+1851:                   borderRadius: BorderRadius.circular(18),
+1852:                   border: Border.all(color: const Color(0xFFE2E8F0)),
+1853:                 ),
+1854:                 child: Column(
+1855:                   children: [
+1856:                     const Icon(Icons.search_off_rounded, size: 36, color: Color(0xFF94A3B8)),
+1857:                     const SizedBox(height: 10),
+1858:                     Text(
+1859:                       'Không tìm thấy điểm dừng nào khớp với "$_searchQuery"',
+1860:                       style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+1861:                       textAlign: TextAlign.center,
+1862:                     ),
+1863:                   ],
+1864:                 ),
+1865:               )
+1866:             else
+1867:               // Timeline Days List
+1868:               ...displayedDays.asMap().entries.map((entry) {
+1869:               final dIdx = entry.key;
+1870:               final day = entry.value;
+1871:               final isExpanded = _expandedDayIndices.contains(dIdx);
+1872:               final badgeColor = _dayBadgeColors[dIdx % _dayBadgeColors.length];
+1873:               final dayCost = day.stops.fold(0.0, (acc, s) => acc + s.costEstimateNum);
+1874: 
+1875:               return Container(
+1876:                 margin: const EdgeInsets.only(bottom: 14),
+1877:                 decoration: BoxDecoration(
+1878:                   color: Colors.white,
+1879:                   borderRadius: BorderRadius.circular(18),
+1880:                   border: Border.all(color: const Color(0xFFE2E8F0)),
+1881:                   boxShadow: [
+1882:                     BoxShadow(
+1883:                       color: Colors.black.withValues(alpha: 0.02),
+1884:                       blurRadius: 8,
+1885:                       offset: const Offset(0, 2),
+1886:                     ),
+1887:                   ],
+1888:                 ),
+1889:                 child: Column(
+1890:                   children: [
+1891:                     // Day Header Bar
+1892:                     InkWell(
+1893:                       onTap: () => _toggleDay(dIdx),
+1894:                       borderRadius: BorderRadius.circular(18),
+1895:                       child: Padding(
+1896:                         padding: const EdgeInsets.all(14),
+1897:                         child: Row(
+1898:                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+1899:                           children: [
+1900:                             Expanded(
+1901:                               child: Row(
+1902:                                 children: [
+1903:                                   // Day Badge (N1, N2...)
+1904:                                   Container(
+1905:                                     width: 34,
+1906:                                     height: 34,
+1907:                                     decoration: BoxDecoration(
+1908:                                       color: badgeColor,
+1909:                                       borderRadius: BorderRadius.circular(10),
+1910:                                     ),
+1911:                                     alignment: Alignment.center,
+1912:                                     child: Text(
+1913:                                       'N${day.dayNumber}',
+1914:                                       style: const TextStyle(
+1915:                                         color: Colors.white,
+1916:                                         fontSize: 13,
+1917:                                         fontWeight: FontWeight.w900,
+1918:                                       ),
+1919:                                     ),
+1920:                                   ),
+1921:                                   const SizedBox(width: 10),
+1922: 
+1923:                                   // Day Title & Details
+1924:                                   Expanded(
+1925:                                     child: Column(
+1926:                                       crossAxisAlignment: CrossAxisAlignment.start,
+1927:                                       children: [
+1928:                                         Row(
+1929:                                           children: [
+1930:                                             Flexible(
+1931:                                               child: Text(
+1932:                                                 day.title,
+1933:                                                 style: const TextStyle(
+1934:                                                   fontSize: 14,
+1935:                                                   fontWeight: FontWeight.w800,
+1936:                                                   color: Color(0xFF0F172A),
+1937:                                                 ),
+1938:                                                 maxLines: 1,
+1939:                                                 overflow: TextOverflow.ellipsis,
+1940:                                               ),
+1941:                                             ),
+1942:                                             const SizedBox(width: 4),
+1943:                                             InkWell(
+1944:                                               onTap: () => _showEditDayDialog(dIdx),
+1945:                                               child: const Icon(Icons.edit_rounded, size: 12, color: Color(0xFF94A3B8)),
+1946:                                             ),
+1947:                                           ],
+1948:                                         ),
+1949:                                         const SizedBox(height: 2),
+1950:                                         Text(
+1951:                                           '${day.stops.length} điểm dừng${dayCost > 0 ? ' • Dự tính: ${dayCost.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ' : ''}${day.date != null ? ' • ${day.date}' : ''}',
+1952:                                           style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+1953:                                           maxLines: 1,
+1954:                                           overflow: TextOverflow.ellipsis,
+1955:                                         ),
+1956:                                       ],
+1957:                                     ),
+1958:                                   ),
+1959:                                 ],
+1960:                               ),
+1961:                             ),
+1962: 
+1963:                             // Action Buttons (Add Stop, Delete Day, Toggle Chevron)
+1964:                             Row(
+1965:                               children: [
+1966:                                 // Add Stop Button
+1967:                                 ElevatedButton.icon(
+1968:                                   onPressed: () => _showAddStopOptions(day.dayNumber),
+1969:                                   icon: const Icon(Icons.add_rounded, size: 13),
+1970:                                   label: const Text('Thêm điểm', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800)),
+1971:                                   style: ElevatedButton.styleFrom(
+1972:                                     backgroundColor: const Color(0xFF065F46),
+1973:                                     foregroundColor: Colors.white,
+1974:                                     elevation: 0,
+1975:                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+1976:                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+1977:                                     minimumSize: Size.zero,
+1978:                                   ),
+1979:                                 ),
+1980:                                 if (_itinerary.days.length > 1) ...[
+1981:                                   const SizedBox(width: 4),
+1982:                                   IconButton(
+1983:                                     icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
+1984:                                     padding: EdgeInsets.zero,
+1985:                                     constraints: const BoxConstraints(),
+1986:                                     onPressed: () => _handleDeleteDay(dIdx),
+1987:                                   ),
+1988:                                 ],
+1989:                                 const SizedBox(width: 4),
+1990:                                 Icon(
+1991:                                   isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+1992:                                   color: const Color(0xFF64748B),
+1993:                                   size: 20,
+1994:                                 ),
+1995:                               ],
+1996:                             ),
+1997:                           ],
+1998:                         ),
+1999:                       ),
+2000:                     ),
+2001: 
+2002:                     // Stops List
+2003:                     if (isExpanded) ...[
+2004:                       const Divider(height: 1, color: Color(0xFFF1F5F9)),
+2005:                       if (day.stops.isEmpty)
+2006:                         Padding(
+2007:                           padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+2008:                           child: Column(
+2009:                             children: [
+2010:                               const Icon(Icons.add_location_alt_outlined, size: 32, color: Color(0xFFCBD5E1)),
+2011:                               const SizedBox(height: 6),
+2012:                               const Text(
+2013:                                 'Chưa có điểm dừng nào trong ngày này',
+2014:                                 style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+2015:                               ),
+2016:                               const SizedBox(height: 8),
+2017:                               OutlinedButton.icon(
+2018:                                 onPressed: () => _showAddStopOptions(day.dayNumber),
+2019:                                 icon: const Icon(Icons.add_rounded, size: 14, color: Color(0xFF065F46)),
+2020:                                 label: const Text('Thêm điểm dừng đầu tiên', style: TextStyle(fontSize: 11.5, color: Color(0xFF065F46), fontWeight: FontWeight.w800)),
+2021:                                 style: OutlinedButton.styleFrom(
+2022:                                   side: const BorderSide(color: Color(0xFF065F46)),
+2023:                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+2024:                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+2025:                                 ),
+2026:                               ),
+2027:                             ],
+2028:                           ),
+2029:                         )
+2030:                       else
+2031:                         Padding(
+2032:                           padding: const EdgeInsets.all(12),
+2033:                           child: Column(
+2034:                             children: day.stops.asMap().entries.map((stopEntry) {
+2035:                               final sIdx = stopEntry.key;
+2036:                               final stop = stopEntry.value;
+2037: 
+2038:                               return Container(
+2039:                                 margin: EdgeInsets.only(bottom: sIdx < day.stops.length - 1 ? 10 : 0),
+2040:                                 padding: const EdgeInsets.all(12),
+2041:                                 decoration: BoxDecoration(
+2042:                                   color: const Color(0xFFF8FAFC),
+2043:                                   borderRadius: BorderRadius.circular(12),
+2044:                                   border: Border.all(color: const Color(0xFFE2E8F0)),
+2045:                                 ),
+2046:                                 child: Row(
+2047:                                   children: [
+2048:                                     // Order Badge
+2049:                                     Container(
+2050:                                       width: 24,
+2051:                                       height: 24,
+2052:                                       decoration: BoxDecoration(
+2053:                                         color: const Color(0xFFD1FAE5),
+2054:                                         borderRadius: BorderRadius.circular(6),
+2055:                                       ),
+2056:                                       alignment: Alignment.center,
+2057:                                       child: Text(
+2058:                                         '${sIdx + 1}',
+2059:                                         style: const TextStyle(
+2060:                                           fontSize: 11.5,
+2061:                                           fontWeight: FontWeight.w900,
+2062:                                           color: Color(0xFF065F46),
+2063:                                         ),
+2064:                                       ),
+2065:                                     ),
+2066:                                     const SizedBox(width: 10),
+2067: 
+2068:                                     // Main Stop Details
+2069:                                     Expanded(
+2070:                                       child: Column(
+2071:                                         crossAxisAlignment: CrossAxisAlignment.start,
+2072:                                         children: [
+2073:                                           Text(
+2074:                                             stop.activity,
+2075:                                             style: const TextStyle(
+2076:                                               fontSize: 13.5,
+2077:                                               fontWeight: FontWeight.w800,
+2078:                                               color: Color(0xFF0F172A),
+2079:                                             ),
+2080:                                             maxLines: 1,
+2081:                                             overflow: TextOverflow.ellipsis,
+2082:                                           ),
+2083:                                           const SizedBox(height: 3),
+2084:                                           Wrap(
+2085:                                             spacing: 6,
+2086:                                             runSpacing: 4,
+2087:                                             children: [
+2088:                                               // Time Pill
+2089:                                               Container(
+2090:                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+2091:                                                 decoration: BoxDecoration(
+2092:                                                   color: Colors.white,
+2093:                                                   borderRadius: BorderRadius.circular(4),
+2094:                                                   border: Border.all(color: const Color(0xFFE2E8F0)),
+2095:                                                 ),
+2096:                                                 child: Row(
+2097:                                                   mainAxisSize: MainAxisSize.min,
+2098:                                                   children: [
+2099:                                                     const Icon(Icons.schedule_rounded, size: 10, color: Color(0xFF065F46)),
+2100:                                                     const SizedBox(width: 3),
+2101:                                                     Text(
+2102:                                                       '${stop.startTime} - ${stop.endTime}',
+2103:                                                       style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+2104:                                                     ),
+2105:                                                   ],
+2106:                                                 ),
+2107:                                               ),
+2108:                                               // Transport Pill
+2109:                                               Container(
+2110:                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+2111:                                                 decoration: BoxDecoration(
+2112:                                                   color: Colors.white,
+2113:                                                   borderRadius: BorderRadius.circular(4),
+2114:                                                   border: Border.all(color: const Color(0xFFE2E8F0)),
+2115:                                                 ),
+2116:                                                 child: Text(
+2117:                                                   stop.transportMode,
+2118:                                                   style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+2119:                                                 ),
+2120:                                               ),
+2121:                                               // Category
+2122:                                               if (stop.category.isNotEmpty)
+2123:                                                 Container(
+2124:                                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+2125:                                                   decoration: BoxDecoration(
+2126:                                                     color: Colors.white,
+2127:                                                     borderRadius: BorderRadius.circular(4),
+2128:                                                     border: Border.all(color: const Color(0xFFE2E8F0)),
+2129:                                                   ),
+2130:                                                   child: Text(
+2131:                                                     stop.category,
+2132:                                                     style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+2133:                                                   ),
+2134:                                                 ),
+2135:                                             ],
+2136:                                           ),
+2137:                                           if (stop.description != null && stop.description!.isNotEmpty) ...[
+2138:                                             const SizedBox(height: 3),
+2139:                                             Text(
+2140:                                               stop.description!,
+2141:                                               style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+2142:                                               maxLines: 1,
+2143:                                               overflow: TextOverflow.ellipsis,
+2144:                                             ),
+2145:                                           ],
+2146:                                         ],
+2147:                                       ),
+2148:                                     ),
+2149: 
+2150:                                     // Cost & Context Menu
+2151:                                     Column(
+2152:                                       crossAxisAlignment: CrossAxisAlignment.end,
+2153:                                       children: [
+2154:                                         Text(
+2155:                                           stop.costEstimateNum > 0
+2156:                                               ? '${stop.costEstimateNum.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
+2157:                                               : (stop.costEstimate != null && stop.costEstimate!.isNotEmpty ? stop.costEstimate! : 'Miễn phí'),
+2158:                                           style: const TextStyle(
+2159:                                             fontSize: 11.5,
+2160:                                             fontWeight: FontWeight.w800,
+2161:                                             color: Color(0xFF065F46),
+2162:                                           ),
+2163:                                         ),
+2164:                                         const SizedBox(height: 4),
+2165:                                         PopupMenuButton<String>(
+2166:                                           icon: const Icon(Icons.more_horiz_rounded, size: 18, color: Color(0xFF94A3B8)),
+2167:                                           padding: EdgeInsets.zero,
+2168:                                           constraints: const BoxConstraints(),
+2169:                                           onSelected: (val) {
+2170:                                             if (val == 'edit') {
+2171:                                               ItineraryStopDetailSheet.show(
+2172:                                                 context,
+2173:                                                 stop: stop,
+2174:                                                 dayNumber: day.dayNumber,
+2175:                                                 onDelete: () => _handleDeleteStop(day.dayNumber, stop.id, stop.activity),
+2176:                                               );
+2177:                                             } else if (val == 'wishlist') {
+2178:                                               _handleMoveStopToWishlist(day.dayNumber, stop);
+2179:                                             } else if (val == 'delete') {
+2180:                                               _handleDeleteStop(day.dayNumber, stop.id, stop.activity);
+2181:                                             } else if (val.startsWith('move_')) {
+2182:                                               final targetDayNum = int.tryParse(val.split('_')[1]);
+2183:                                               if (targetDayNum != null) {
+2184:                                                 _handleMoveStopToDay(day.dayNumber, targetDayNum, stop);
+2185:                                               }
+2186:                                             }
+2187:                                           },
+2188:                                           itemBuilder: (context) => [
+2189:                                             const PopupMenuItem(
+2190:                                               value: 'edit',
+2191:                                               child: Text('Chỉnh sửa chi tiết', style: TextStyle(fontSize: 12.5)),
+2192:                                             ),
+2193:                                             ..._itinerary.days
+2194:                                                 .where((d) => d.dayNumber != day.dayNumber)
+2195:                                                 .map((d) => PopupMenuItem(
+2196:                                                       value: 'move_${d.dayNumber}',
+2197:                                                       child: Text('Chuyển sang Ngày ${d.dayNumber}', style: const TextStyle(fontSize: 12.5)),
+2198:                                                     )),
+2199:                                             const PopupMenuItem(
+2200:                                               value: 'wishlist',

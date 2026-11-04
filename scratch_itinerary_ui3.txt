@@ -1,0 +1,465 @@
+2051:                                       height: 24,
+2052:                                       decoration: BoxDecoration(
+2053:                                         color: const Color(0xFFD1FAE5),
+2054:                                         borderRadius: BorderRadius.circular(6),
+2055:                                       ),
+2056:                                       alignment: Alignment.center,
+2057:                                       child: Text(
+2058:                                         '${sIdx + 1}',
+2059:                                         style: const TextStyle(
+2060:                                           fontSize: 11.5,
+2061:                                           fontWeight: FontWeight.w900,
+2062:                                           color: Color(0xFF065F46),
+2063:                                         ),
+2064:                                       ),
+2065:                                     ),
+2066:                                     const SizedBox(width: 10),
+2067: 
+2068:                                     // Main Stop Details
+2069:                                     Expanded(
+2070:                                       child: Column(
+2071:                                         crossAxisAlignment: CrossAxisAlignment.start,
+2072:                                         children: [
+2073:                                           Text(
+2074:                                             stop.activity,
+2075:                                             style: const TextStyle(
+2076:                                               fontSize: 13.5,
+2077:                                               fontWeight: FontWeight.w800,
+2078:                                               color: Color(0xFF0F172A),
+2079:                                             ),
+2080:                                             maxLines: 1,
+2081:                                             overflow: TextOverflow.ellipsis,
+2082:                                           ),
+2083:                                           const SizedBox(height: 3),
+2084:                                           Wrap(
+2085:                                             spacing: 6,
+2086:                                             runSpacing: 4,
+2087:                                             children: [
+2088:                                               // Time Pill
+2089:                                               Container(
+2090:                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+2091:                                                 decoration: BoxDecoration(
+2092:                                                   color: Colors.white,
+2093:                                                   borderRadius: BorderRadius.circular(4),
+2094:                                                   border: Border.all(color: const Color(0xFFE2E8F0)),
+2095:                                                 ),
+2096:                                                 child: Row(
+2097:                                                   mainAxisSize: MainAxisSize.min,
+2098:                                                   children: [
+2099:                                                     const Icon(Icons.schedule_rounded, size: 10, color: Color(0xFF065F46)),
+2100:                                                     const SizedBox(width: 3),
+2101:                                                     Text(
+2102:                                                       '${stop.startTime} - ${stop.endTime}',
+2103:                                                       style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+2104:                                                     ),
+2105:                                                   ],
+2106:                                                 ),
+2107:                                               ),
+2108:                                               // Transport Pill
+2109:                                               Container(
+2110:                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+2111:                                                 decoration: BoxDecoration(
+2112:                                                   color: Colors.white,
+2113:                                                   borderRadius: BorderRadius.circular(4),
+2114:                                                   border: Border.all(color: const Color(0xFFE2E8F0)),
+2115:                                                 ),
+2116:                                                 child: Text(
+2117:                                                   stop.transportMode,
+2118:                                                   style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+2119:                                                 ),
+2120:                                               ),
+2121:                                               // Category
+2122:                                               if (stop.category.isNotEmpty)
+2123:                                                 Container(
+2124:                                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+2125:                                                   decoration: BoxDecoration(
+2126:                                                     color: Colors.white,
+2127:                                                     borderRadius: BorderRadius.circular(4),
+2128:                                                     border: Border.all(color: const Color(0xFFE2E8F0)),
+2129:                                                   ),
+2130:                                                   child: Text(
+2131:                                                     stop.category,
+2132:                                                     style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+2133:                                                   ),
+2134:                                                 ),
+2135:                                             ],
+2136:                                           ),
+2137:                                           if (stop.description != null && stop.description!.isNotEmpty) ...[
+2138:                                             const SizedBox(height: 3),
+2139:                                             Text(
+2140:                                               stop.description!,
+2141:                                               style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+2142:                                               maxLines: 1,
+2143:                                               overflow: TextOverflow.ellipsis,
+2144:                                             ),
+2145:                                           ],
+2146:                                         ],
+2147:                                       ),
+2148:                                     ),
+2149: 
+2150:                                     // Cost & Context Menu
+2151:                                     Column(
+2152:                                       crossAxisAlignment: CrossAxisAlignment.end,
+2153:                                       children: [
+2154:                                         Text(
+2155:                                           stop.costEstimateNum > 0
+2156:                                               ? '${stop.costEstimateNum.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
+2157:                                               : (stop.costEstimate != null && stop.costEstimate!.isNotEmpty ? stop.costEstimate! : 'Miễn phí'),
+2158:                                           style: const TextStyle(
+2159:                                             fontSize: 11.5,
+2160:                                             fontWeight: FontWeight.w800,
+2161:                                             color: Color(0xFF065F46),
+2162:                                           ),
+2163:                                         ),
+2164:                                         const SizedBox(height: 4),
+2165:                                         PopupMenuButton<String>(
+2166:                                           icon: const Icon(Icons.more_horiz_rounded, size: 18, color: Color(0xFF94A3B8)),
+2167:                                           padding: EdgeInsets.zero,
+2168:                                           constraints: const BoxConstraints(),
+2169:                                           onSelected: (val) {
+2170:                                             if (val == 'edit') {
+2171:                                               ItineraryStopDetailSheet.show(
+2172:                                                 context,
+2173:                                                 stop: stop,
+2174:                                                 dayNumber: day.dayNumber,
+2175:                                                 onDelete: () => _handleDeleteStop(day.dayNumber, stop.id, stop.activity),
+2176:                                               );
+2177:                                             } else if (val == 'wishlist') {
+2178:                                               _handleMoveStopToWishlist(day.dayNumber, stop);
+2179:                                             } else if (val == 'delete') {
+2180:                                               _handleDeleteStop(day.dayNumber, stop.id, stop.activity);
+2181:                                             } else if (val.startsWith('move_')) {
+2182:                                               final targetDayNum = int.tryParse(val.split('_')[1]);
+2183:                                               if (targetDayNum != null) {
+2184:                                                 _handleMoveStopToDay(day.dayNumber, targetDayNum, stop);
+2185:                                               }
+2186:                                             }
+2187:                                           },
+2188:                                           itemBuilder: (context) => [
+2189:                                             const PopupMenuItem(
+2190:                                               value: 'edit',
+2191:                                               child: Text('Chỉnh sửa chi tiết', style: TextStyle(fontSize: 12.5)),
+2192:                                             ),
+2193:                                             ..._itinerary.days
+2194:                                                 .where((d) => d.dayNumber != day.dayNumber)
+2195:                                                 .map((d) => PopupMenuItem(
+2196:                                                       value: 'move_${d.dayNumber}',
+2197:                                                       child: Text('Chuyển sang Ngày ${d.dayNumber}', style: const TextStyle(fontSize: 12.5)),
+2198:                                                     )),
+2199:                                             const PopupMenuItem(
+2200:                                               value: 'wishlist',
+2201:                                               child: Text('Chuyển vào Kho lưu trữ', style: TextStyle(fontSize: 12.5)),
+2202:                                             ),
+2203:                                             const PopupMenuItem(
+2204:                                               value: 'delete',
+2205:                                               child: Text('Xóa địa điểm', style: TextStyle(fontSize: 12.5, color: Colors.red)),
+2206:                                             ),
+2207:                                           ],
+2208:                                         ),
+2209:                                       ],
+2210:                                     ),
+2211:                                   ],
+2212:                                 ),
+2213:                               );
+2214:                             }).toList(),
+2215:                           ),
+2216:                         ),
+2217:                     ],
+2218:                   ],
+2219:                 ),
+2220:               );
+2221:             }),
+2222: 
+2223:             const SizedBox(height: 6),
+2224: 
+2225:             // Wishlist / Backlog Storage Section (Matching Share_Locations ItineraryWishlistSection.tsx)
+2226:             Container(
+2227:               decoration: BoxDecoration(
+2228:                 color: Colors.white,
+2229:                 borderRadius: BorderRadius.circular(18),
+2230:                 border: Border.all(color: const Color(0xFFE2E8F0)),
+2231:                 boxShadow: [
+2232:                   BoxShadow(
+2233:                     color: Colors.black.withValues(alpha: 0.02),
+2234:                     blurRadius: 8,
+2235:                     offset: const Offset(0, 2),
+2236:                   ),
+2237:                 ],
+2238:               ),
+2239:               child: Column(
+2240:                 children: [
+2241:                   // Wishlist Header
+2242:                   InkWell(
+2243:                     onTap: () => setState(() => _isWishlistExpanded = !_isWishlistExpanded),
+2244:                     borderRadius: BorderRadius.circular(18),
+2245:                     child: Padding(
+2246:                       padding: const EdgeInsets.all(14),
+2247:                       child: Row(
+2248:                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+2249:                         children: [
+2250:                           Row(
+2251:                             children: [
+2252:                               Container(
+2253:                                 padding: const EdgeInsets.all(7),
+2254:                                 decoration: BoxDecoration(
+2255:                                   color: const Color(0xFFFEF3C7),
+2256:                                   borderRadius: BorderRadius.circular(10),
+2257:                                 ),
+2258:                                 child: const Icon(Icons.bookmark_added_rounded, size: 16, color: Color(0xFFD97706)),
+2259:                               ),
+2260:                               const SizedBox(width: 10),
+2261:                               Column(
+2262:                                 crossAxisAlignment: CrossAxisAlignment.start,
+2263:                                 children: [
+2264:                                   const Text(
+2265:                                     'Kho lưu trữ & Chờ xếp lịch',
+2266:                                     style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+2267:                                   ),
+2268:                                   Text(
+2269:                                     '${_itinerary.backlogStops.length} địa điểm đang chờ xếp vào các ngày',
+2270:                                     style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+2271:                                   ),
+2272:                                 ],
+2273:                               ),
+2274:                             ],
+2275:                           ),
+2276:                           Icon(
+2277:                             _isWishlistExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+2278:                             color: const Color(0xFF64748B),
+2279:                             size: 20,
+2280:                           ),
+2281:                         ],
+2282:                       ),
+2283:                     ),
+2284:                   ),
+2285: 
+2286:                   // Wishlist Content
+2287:                   if (_isWishlistExpanded) ...[
+2288:                     const Divider(height: 1, color: Color(0xFFF1F5F9)),
+2289:                     Padding(
+2290:                       padding: const EdgeInsets.all(14),
+2291:                       child: Column(
+2292:                         children: [
+2293:                           // Quick add row
+2294:                           Row(
+2295:                             children: [
+2296:                               Expanded(
+2297:                                 child: Container(
+2298:                                   padding: const EdgeInsets.symmetric(horizontal: 10),
+2299:                                   decoration: BoxDecoration(
+2300:                                     color: const Color(0xFFF8FAFC),
+2301:                                     borderRadius: BorderRadius.circular(10),
+2302:                                     border: Border.all(color: const Color(0xFFE2E8F0)),
+2303:                                   ),
+2304:                                   child: TextField(
+2305:                                     controller: _quickWishlistController,
+2306:                                     style: const TextStyle(fontSize: 12),
+2307:                                     decoration: const InputDecoration(
+2308:                                       hintText: 'Nhập nhanh tên địa điểm muốn lưu...',
+2309:                                       hintStyle: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+2310:                                       border: InputBorder.none,
+2311:                                       isDense: true,
+2312:                                       contentPadding: EdgeInsets.symmetric(vertical: 8),
+2313:                                     ),
+2314:                                     onSubmitted: (_) => _handleQuickAddWishlist(),
+2315:                                   ),
+2316:                                 ),
+2317:                               ),
+2318:                               const SizedBox(width: 8),
+2319:                               ElevatedButton(
+2320:                                 onPressed: _handleQuickAddWishlist,
+2321:                                 style: ElevatedButton.styleFrom(
+2322:                                   backgroundColor: const Color(0xFF065F46),
+2323:                                   foregroundColor: Colors.white,
+2324:                                   elevation: 0,
+2325:                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+2326:                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+2327:                                   minimumSize: Size.zero,
+2328:                                 ),
+2329:                                 child: const Text('Lưu', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+2330:                               ),
+2331:                             ],
+2332:                           ),
+2333: 
+2334:                           const SizedBox(height: 10),
+2335: 
+2336:                           Row(
+2337:                             children: [
+2338:                               OutlinedButton.icon(
+2339:                                 onPressed: () => ItineraryPlacePickerSheet.show(
+2340:                                   context,
+2341:                                   tripId: _itinerary.id,
+2342:                                   dayNumber: 0,
+2343:                                   initialMode: 'knn_suggestions',
+2344:                                   onSelectPlace: (stop) => _handleAddStop(0, stop),
+2345:                                 ),
+2346:                                 icon: const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF047857)),
+2347:                                 label: const Text(
+2348:                                   'Đề xuất theo gu đoàn',
+2349:                                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
+2350:                                 ),
+2351:                                 style: OutlinedButton.styleFrom(
+2352:                                   backgroundColor: const Color(0xFFECFDF5),
+2353:                                   side: const BorderSide(color: Color(0xFFA7F3D0)),
+2354:                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+2355:                                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+2356:                                 ),
+2357:                               ),
+2358:                             ],
+2359:                           ),
+2360: 
+2361:                           const SizedBox(height: 10),
+2362: 
+2363:                           if (_itinerary.backlogStops.isEmpty)
+2364:                             const Padding(
+2365:                               padding: EdgeInsets.symmetric(vertical: 12),
+2366:                               child: Text(
+2367:                                 'Kho lưu trữ đang trống. Bạn có thể lưu các điểm đến yêu thích tại đây để xếp lịch sau.',
+2368:                                 textAlign: TextAlign.center,
+2369:                                 style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+2370:                               ),
+2371:                             )
+2372:                           else
+2373:                             ..._itinerary.backlogStops.map((stop) {
+2374:                               return Container(
+2375:                                 margin: const EdgeInsets.only(bottom: 8),
+2376:                                 padding: const EdgeInsets.all(10),
+2377:                                 decoration: BoxDecoration(
+2378:                                   color: const Color(0xFFF8FAFC),
+2379:                                   borderRadius: BorderRadius.circular(10),
+2380:                                   border: Border.all(color: const Color(0xFFE2E8F0)),
+2381:                                 ),
+2382:                                 child: Row(
+2383:                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+2384:                                   children: [
+2385:                                     Expanded(
+2386:                                       child: Column(
+2387:                                         crossAxisAlignment: CrossAxisAlignment.start,
+2388:                                         children: [
+2389:                                           Text(
+2390:                                             stop.activity,
+2391:                                             style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+2392:                                             maxLines: 1,
+2393:                                             overflow: TextOverflow.ellipsis,
+2394:                                           ),
+2395:                                           Text(
+2396:                                             '${stop.category} • ${stop.location}',
+2397:                                             style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+2398:                                             maxLines: 1,
+2399:                                             overflow: TextOverflow.ellipsis,
+2400:                                           ),
+2401:                                         ],
+2402:                                       ),
+2403:                                     ),
+2404:                                     PopupMenuButton<int>(
+2405:                                       icon: Container(
+2406:                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+2407:                                         decoration: BoxDecoration(
+2408:                                           color: const Color(0xFFD1FAE5),
+2409:                                           borderRadius: BorderRadius.circular(6),
+2410:                                         ),
+2411:                                         child: Row(
+2412:                                           mainAxisSize: MainAxisSize.min,
+2413:                                           children: const [
+2414:                                             Text(
+2415:                                               'Xếp vào ngày',
+2416:                                               style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
+2417:                                             ),
+2418:                                             SizedBox(width: 2),
+2419:                                             Icon(Icons.arrow_drop_down_rounded, size: 14, color: Color(0xFF065F46)),
+2420:                                           ],
+2421:                                         ),
+2422:                                       ),
+2423:                                       onSelected: (targetDayNum) => _handleMoveWishlistToDay(targetDayNum, stop),
+2424:                                       itemBuilder: (context) => _itinerary.days
+2425:                                           .map((d) => PopupMenuItem<int>(
+2426:                                                 value: d.dayNumber,
+2427:                                                 child: Text('Xếp vào Ngày ${d.dayNumber}', style: const TextStyle(fontSize: 12)),
+2428:                                               ))
+2429:                                           .toList(),
+2430:                                     ),
+2431:                                   ],
+2432:                                 ),
+2433:                               );
+2434:                             }),
+2435:                         ],
+2436:                       ),
+2437:                     ),
+2438:                   ],
+2439:                 ],
+2440:               ),
+2441:             ),
+2442: 
+2443:             const SizedBox(height: 16),
+2444: 
+2445:             // Place Explorer Drawer Trigger Banner (Matching ItineraryPlacePickerDrawer.tsx)
+2446:             Container(
+2447:               width: double.infinity,
+2448:               padding: const EdgeInsets.all(16),
+2449:               decoration: BoxDecoration(
+2450:                 gradient: const LinearGradient(
+2451:                   colors: [Color(0xFF064E3B), Color(0xFF065F46)],
+2452:                 ),
+2453:                 borderRadius: BorderRadius.circular(18),
+2454:                 boxShadow: [
+2455:                   BoxShadow(
+2456:                     color: const Color(0xFF064E3B).withValues(alpha: 0.2),
+2457:                     blurRadius: 10,
+2458:                     offset: const Offset(0, 4),
+2459:                   ),
+2460:                 ],
+2461:               ),
+2462:               child: Row(
+2463:                 children: [
+2464:                   Container(
+2465:                     padding: const EdgeInsets.all(10),
+2466:                     decoration: BoxDecoration(
+2467:                       color: Colors.white.withValues(alpha: 0.15),
+2468:                       borderRadius: BorderRadius.circular(12),
+2469:                     ),
+2470:                     child: const Icon(Icons.explore_rounded, color: Colors.white, size: 24),
+2471:                   ),
+2472:                   const SizedBox(width: 12),
+2473:                   Expanded(
+2474:                     child: Column(
+2475:                       crossAxisAlignment: CrossAxisAlignment.start,
+2476:                       children: const [
+2477:                         Text(
+2478:                           'Khám phá thêm địa điểm du lịch',
+2479:                           style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white),
+2480:                         ),
+2481:                         SizedBox(height: 2),
+2482:                         Text(
+2483:                           'Tra cứu danh thắng, ẩm thực và thêm vào lịch trình chỉ với 1 chạm.',
+2484:                           style: TextStyle(fontSize: 11, color: Color(0xFFD1FAE5)),
+2485:                         ),
+2486:                       ],
+2487:                     ),
+2488:                   ),
+2489:                   const SizedBox(width: 8),
+2490:                   ElevatedButton(
+2491:                     onPressed: () => ItineraryPlacePickerSheet.show(
+2492:                       context,
+2493:                       tripId: _itinerary.id,
+2494:                       dayNumber: 0,
+2495:                       initialMode: 'knn_suggestions',
+2496:                       onSelectPlace: (stop) => _handleAddStop(0, stop),
+2497:                     ),
+2498:                     style: ElevatedButton.styleFrom(
+2499:                       backgroundColor: Colors.white,
+2500:                       foregroundColor: const Color(0xFF064E3B),
+2501:                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+2502:                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+2503:                       elevation: 0,
+2504:                     ),
+2505:                     child: const Text('Mở thư viện', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+2506:                   ),
+2507:                 ],
+2508:               ),
+2509:             ),
+2510:           ],
+2511:         ),
+2512:       ),
+2513:     );
+2514:   }
+2515: }
