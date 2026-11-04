@@ -19,16 +19,29 @@ class BlogCardWidget extends StatelessWidget {
     this.onToggleSave,
   });
 
-  Widget _buildCoverImage() {
-    final url = blog.imageUrl.trim();
-    if (url.isEmpty) {
-      return Container(
-        color: const Color(0xFFF1F5F9),
-        child: const Center(
-          child: Icon(Icons.menu_book_rounded, color: Color(0xFF065F46), size: 36),
-        ),
-      );
+  String _resolveFallbackImage() {
+    final cat = blog.category.toLowerCase();
+    if (cat.contains('ẩm thực') || cat.contains('quán ăn') || cat.contains('nhà hàng') || cat.contains('cà phê') || cat.contains('tráng miệng')) {
+      return 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=700&h=450&fit=crop';
     }
+    if (cat.contains('homestay') || cat.contains('farmstay') || cat.contains('khách sạn') || cat.contains('resort') || cat.contains('villa') || cat.contains('hostel')) {
+      return 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=700&h=450&fit=crop';
+    }
+    if (cat.contains('danh lam') || cat.contains('thắng cảnh') || cat.contains('di tích') || cat.contains('tâm linh')) {
+      return 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=700&h=450&fit=crop';
+    }
+    if (cat.contains('chợ') || cat.contains('phố đi bộ') || cat.contains('đặc sản') || cat.contains('quà lưu niệm')) {
+      return 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=700&h=450&fit=crop';
+    }
+    if (cat.contains('vui chơi') || cat.contains('giải trí')) {
+      return 'https://images.unsplash.com/photo-1513836279014-a89f7a76ae86?w=700&h=450&fit=crop';
+    }
+    return 'https://images.unsplash.com/photo-1528127269322-539801943592?w=700&h=450&fit=crop';
+  }
+
+  Widget _buildCoverImage() {
+    final rawUrl = blog.imageUrl.trim();
+    final url = rawUrl.isNotEmpty ? rawUrl : _resolveFallbackImage();
 
     if (url.startsWith('data:image')) {
       try {
@@ -38,11 +51,9 @@ class BlogCardWidget extends StatelessWidget {
         return Image.memory(
           bytes,
           fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) => Container(
-            color: const Color(0xFFF1F5F9),
-            child: const Center(
-              child: Icon(Icons.menu_book_rounded, color: Color(0xFF065F46), size: 36),
-            ),
+          errorBuilder: (context, error, stackTrace) => Image.network(
+            _resolveFallbackImage(),
+            fit: BoxFit.cover,
           ),
         );
       } catch (_) {}
@@ -51,11 +62,9 @@ class BlogCardWidget extends StatelessWidget {
     return Image.network(
       url,
       fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => Container(
-        color: const Color(0xFFF1F5F9),
-        child: const Center(
-          child: Icon(Icons.menu_book_rounded, color: Color(0xFF065F46), size: 36),
-        ),
+      errorBuilder: (context, error, stackTrace) => Image.network(
+        _resolveFallbackImage(),
+        fit: BoxFit.cover,
       ),
     );
   }

@@ -33,6 +33,8 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
   String _currentUserRole = 'Owner';
 
   final Set<int> _expandedDayIndices = {};
+  int _selectedDayTab = 0; // 0 = Tat ca, 1..N = Ngay N, -1 = Kho luu tru
+  bool _isSearchVisible = false;
   bool _isWishlistExpanded = true;
   String _searchQuery = '';
   final TextEditingController _quickWishlistController = TextEditingController();
@@ -1175,11 +1177,9 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
     final isOverBudget = totalCost > budgetTarget;
     final members = _itinerary.members;
 
-    final isAllExpanded = _expandedDayIndices.length == _itinerary.days.length;
-
     // Filtered Days by Search Query
     final query = _searchQuery.trim().toLowerCase();
-    final displayedDays = _itinerary.days.map((day) {
+    final allFilteredDays = _itinerary.days.map((day) {
       if (query.isEmpty) return day;
       final filteredStops = day.stops.where((s) {
         return s.activity.toLowerCase().contains(query) ||
@@ -1190,348 +1190,191 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
       return day.copyWith(stops: filteredStops);
     }).toList();
 
+    final displayedDays = _selectedDayTab == 0
+        ? allFilteredDays
+        : (_selectedDayTab > 0
+            ? allFilteredDays.where((d) => d.dayNumber == _selectedDayTab).toList()
+            : <ItineraryDayModel>[]);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(106),
-        child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 10, 6),
+      appBar: _buildModernAppBar(members),
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            color: const Color(0xFF059669),
+            onRefresh: _fetchFullDetail,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Row 1: Back, Info/Title, Actions (Members, Save, Bookmark)
-                  Row(
-                    children: [
-                      // Back Button
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.all(4),
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF334155), size: 20),
-                        onPressed: () async {
-                          if (_hasUnsavedChanges) {
-                            await TravelApiService().applyItinerary(_itinerary.id, itinerary: _itinerary, isApplying: true);
-                          }
-                          if (context.mounted) Navigator.pop(context);
-                        },
-                      ),
-                      const SizedBox(width: 6),
+                  // Role or Publication Status Banners
+                  _buildStatusBanner(),
 
-                      // Title & Badges
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                // Privacy Badge
-                                InkWell(
-                                  onTap: _togglePublish,
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                                    decoration: BoxDecoration(
-                                      color: _isPublished ? const Color(0xFFD1FAE5) : const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: _isPublished ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          _isPublished ? Icons.public_rounded : Icons.lock_outline_rounded,
-                                          size: 10,
-                                          color: _isPublished ? const Color(0xFF065F46) : const Color(0xFF475569),
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          _isPublished ? 'CÔNG KHAI' : 'RIÊNG TƯ',
-                                          style: TextStyle(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w800,
-                                            color: _isPublished ? const Color(0xFF065F46) : const Color(0xFF475569),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Expanded(
-                                  child: InkWell(
-                                    onTap: _showEditTitleDialog,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(Icons.location_on_rounded, size: 10, color: Color(0xFF94A3B8)),
-                                        const SizedBox(width: 1),
-                                        Expanded(
-                                          child: Text(
-                                            '${_itinerary.destination.isNotEmpty ? _itinerary.destination : 'Việt Nam'} • ${_itinerary.daysCount}N${_itinerary.nightsCount}Đ',
-                                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 1),
-                            InkWell(
-                              onTap: _showEditTitleDialog,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      _itinerary.title,
-                                      style: const TextStyle(
-                                        fontSize: 14.5,
-                                        fontWeight: FontWeight.w900,
-                                        color: Color(0xFF0F172A),
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 3),
-                                  const Icon(Icons.edit_rounded, size: 12, color: Color(0xFF94A3B8)),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                  // Trip Summary Bento Hero Card
+                  _buildTripSummaryCard(totalCost, budgetTarget, percentUsed, isOverBudget),
 
-                      // Members Chip (Share_Locations Member Modal)
-                      InkWell(
-                        onTap: _openMembersSheet,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.group_rounded, size: 13, color: Color(0xFF64748B)),
-                              const SizedBox(width: 3),
-                              Text(
-                                '${members.isNotEmpty ? members.length : 1}',
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
+                  const SizedBox(height: 14),
 
-                      // Save Button (Share_Locations Save Button)
-                      InkWell(
-                        onTap: _isSaving ? null : _saveTripChanges,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: _hasUnsavedChanges ? const Color(0xFF065F46) : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: _hasUnsavedChanges ? const Color(0xFF065F46) : const Color(0xFFCBD5E1)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_isSaving)
-                                const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              else
-                                Icon(Icons.save_rounded, size: 13, color: _hasUnsavedChanges ? Colors.white : const Color(0xFF475569)),
-                              const SizedBox(width: 3),
-                              Text(
-                                _isSaving
-                                    ? 'Đang lưu...'
-                                    : (_hasUnsavedChanges ? 'Lưu *' : 'Đã lưu'),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: _hasUnsavedChanges ? Colors.white : const Color(0xFF475569),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                  // Horizontal Sticky Day Tabs (Mobile Segmented Bar)
+                  _buildDayTabsBar(),
+
+                  const SizedBox(height: 12),
+
+                  // Optional Search Bar (if opened or active query)
+                  if (_isSearchVisible || _searchQuery.isNotEmpty) ...[
+                    _buildInlineSearchBar(),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // Content depending on selected tab
+                  if (_selectedDayTab == -1) ...[
+                    // Dedicated Wishlist / Backlog View
+                    _buildWishlistSection(isStandalone: true),
+                  ] else if (_itinerary.days.isEmpty) ...[
+                    _buildEmptyTripPlaceholder(),
+                  ] else if (displayedDays.isEmpty && _searchQuery.isNotEmpty) ...[
+                    _buildNoSearchResultsPlaceholder(),
+                  ] else ...[
+                    // Timeline of Selected / All Days
+                    ...displayedDays.asMap().entries.map((entry) {
+                      final day = entry.value;
+                      final dIdx = _itinerary.days.indexWhere((d) => d.dayNumber == day.dayNumber);
+                      return _buildDayTimelineCard(day, dIdx >= 0 ? dIdx : entry.key);
+                    }),
+
+                    // If viewing All Days, show Wishlist at bottom as a collapsible section
+                    if (_selectedDayTab == 0) ...[
+                      const SizedBox(height: 8),
+                      _buildWishlistSection(isStandalone: false),
                     ],
+                  ],
+
+                  const SizedBox(height: 14),
+
+                  // Discover Places Banner
+                  _buildPlaceExplorerBanner(),
+                ],
+              ),
+            ),
+          ),
+
+          // Persistent Floating Bottom Action Bar
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildBottomActionBar(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildModernAppBar(List<TripMemberModel> members) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 1,
+      surfaceTintColor: Colors.transparent,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF0F172A), size: 18),
+        onPressed: () async {
+          if (_hasUnsavedChanges) {
+            await TravelApiService().applyItinerary(_itinerary.id, itinerary: _itinerary, isApplying: true);
+          }
+          if (mounted) Navigator.pop(context);
+        },
+      ),
+      title: InkWell(
+        onTap: _showEditTitleDialog,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _itinerary.title,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-
-                  const SizedBox(height: 5),
-
-                  // Row 2: Stats (Total Stops, Cost, Target Budget & Percentage Bar, Trip Date & Days)
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: [
-                        // 1. Total stops & cost
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('Tổng điểm dừng: ', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
-                            Text('${_itinerary.stopCount} điểm', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-                            const SizedBox(width: 6),
-                            const Text('Chi phí dự tính: ', style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B))),
-                            Text(
-                              totalCost > 0
-                                  ? '${totalCost.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
-                                  : _itinerary.estimatedCost,
-                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Color(0xFF065F46)),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 8),
-
-                        // 2. Target Budget Pill (Share_Locations Budget Manager)
-                        InkWell(
-                          onTap: () {
-                            if (!canEditStops) {
-                              _showPermissionDeniedSnackBar('Bạn đang ở chế độ xem. Không có quyền điều chỉnh ngân sách.');
-                              return;
-                            }
-                            ItineraryBudgetSheet.show(
-                              context,
-                              itinerary: _itinerary,
-                              onBudgetChanged: (newBudget) {
-                                setState(() {
-                                  _itinerary = _itinerary.copyWith(budgetTarget: newBudget);
-                                  _hasUnsavedChanges = true;
-                                });
-                              },
-                            );
-                          },
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-                            decoration: BoxDecoration(
-                              color: isOverBudget ? const Color(0xFFFFF1F2) : const Color(0xFFF0FDF4),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: isOverBudget ? const Color(0xFFFECDD3) : const Color(0xFFBBF7D0)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.attach_money_rounded, size: 12, color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF065F46)),
-                                const SizedBox(width: 1),
-                                Text(
-                                  'Ngân sách đề ra: ${(budgetTarget / 1000000).toStringAsFixed(1)}tr',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF065F46),
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                const Icon(Icons.edit_outlined, size: 9, color: Color(0xFF94A3B8)),
-                                const SizedBox(width: 4),
-                                // Mini Progress Bar
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(3),
-                                  child: Container(
-                                    width: 28,
-                                    height: 5,
-                                    color: const Color(0xFFE2E8F0),
-                                    child: FractionallySizedBox(
-                                      alignment: Alignment.centerLeft,
-                                      widthFactor: (percentUsed / 100).clamp(0.0, 1.0),
-                                      child: Container(color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF065F46)),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  '$percentUsed%',
-                                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF64748B)),
-                                ),
-                                const SizedBox(width: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: isOverBudget ? const Color(0xFFFFE4E6) : const Color(0xFFDCFCE7),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    isOverBudget
-                                        ? 'Vượt ${(totalCost - budgetTarget).toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
-                                        : 'Còn ${(budgetTarget - totalCost).toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w800,
-                                      color: isOverBudget ? const Color(0xFFBE123C) : const Color(0xFF15803D),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
-                        // 3. Trip Date Pill (Thời gian: Chưa đặt ngày ✏️ [2 ngày])
-                        InkWell(
-                          onTap: _showTripDatePicker,
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFF64748B)),
-                                const SizedBox(width: 3),
-                                const Text('Thời gian: ', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                                Text(
-                                  _formattedTripDateText,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: _itinerary.startDate != null && _itinerary.startDate!.isNotEmpty ? const Color(0xFF0F172A) : const Color(0xFF475569),
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                const Icon(Icons.edit_outlined, size: 9, color: Color(0xFF94A3B8)),
-                                const SizedBox(width: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF1F5F9),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    '${_itinerary.daysCount} ngày',
-                                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF475569)),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
+                  const SizedBox(width: 4),
+                  const Icon(Icons.edit_rounded, size: 12, color: Color(0xFF94A3B8)),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_on_rounded, size: 11, color: Color(0xFF059669)),
+                  const SizedBox(width: 2),
+                  Text(
+                    '${_itinerary.destination.isNotEmpty ? _itinerary.destination : 'Việt Nam'} · ${_itinerary.daysCount}N${_itinerary.nightsCount}Đ',
+                    style: const TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        // Quick Save Indicator
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: InkWell(
+            onTap: _isSaving ? null : _saveTripChanges,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: _hasUnsavedChanges ? const Color(0xFF059669) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: _hasUnsavedChanges ? const Color(0xFF047857) : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_isSaving)
+                    const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  else
+                    Icon(
+                      _hasUnsavedChanges ? Icons.save_rounded : Icons.check_circle_outline_rounded,
+                      size: 13,
+                      color: _hasUnsavedChanges ? Colors.white : const Color(0xFF059669),
+                    ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isSaving
+                        ? 'Đang lưu...'
+                        : (_hasUnsavedChanges ? 'Lưu *' : 'Đã lưu'),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: _hasUnsavedChanges ? Colors.white : const Color(0xFF334155),
                     ),
                   ),
                 ],
@@ -1539,972 +1382,1616 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
             ),
           ),
         ),
+        const SizedBox(width: 4),
+
+        // Members Button
+        IconButton(
+          tooltip: 'Thành viên chuyến đi',
+          icon: Badge(
+            isLabelVisible: members.isNotEmpty,
+            label: Text(
+              '${members.isNotEmpty ? members.length : 1}',
+              style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: const Color(0xFF059669),
+            child: const Icon(Icons.group_rounded, color: Color(0xFF475569), size: 21),
+          ),
+          onPressed: _openMembersSheet,
+        ),
+
+        // More Options Popup Menu
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF475569), size: 20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          onSelected: (val) {
+            if (val == 'publish') {
+              _togglePublish();
+            } else if (val == 'edit_title') {
+              _showEditTitleDialog();
+            } else if (val == 'dates') {
+              _showTripDatePicker();
+            } else if (val == 'budget') {
+              ItineraryBudgetSheet.show(
+                context,
+                itinerary: _itinerary,
+                onBudgetChanged: (newBudget) {
+                  setState(() {
+                    _itinerary = _itinerary.copyWith(budgetTarget: newBudget);
+                    _hasUnsavedChanges = true;
+                  });
+                },
+              );
+            } else if (val == 'add_day') {
+              _handleAddNewDay();
+            } else if (val == 'toggle_all') {
+              _toggleAllDays();
+            } else if (val == 'search') {
+              setState(() => _isSearchVisible = !_isSearchVisible);
+            }
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'publish',
+              child: Row(
+                children: [
+                  Icon(
+                    _isPublished ? Icons.lock_outline_rounded : Icons.public_rounded,
+                    size: 16,
+                    color: _isPublished ? const Color(0xFFD97706) : const Color(0xFF059669),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isPublished ? 'Hủy xuất bản (Chuyển riêng tư)' : 'Xuất bản công khai',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'edit_title',
+              child: Row(
+                children: [
+                  Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFF475569)),
+                  SizedBox(width: 8),
+                  Text('Đổi tên & Điểm đến', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'dates',
+              child: Row(
+                children: [
+                  Icon(Icons.calendar_month_rounded, size: 16, color: Color(0xFF475569)),
+                  SizedBox(width: 8),
+                  Text('Cài đặt ngày khởi hành', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'budget',
+              child: Row(
+                children: [
+                  Icon(Icons.account_balance_wallet_rounded, size: 16, color: Color(0xFF475569)),
+                  SizedBox(width: 8),
+                  Text('Quản lý ngân sách', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'add_day',
+              child: Row(
+                children: [
+                  Icon(Icons.add_circle_outline_rounded, size: 16, color: Color(0xFF059669)),
+                  SizedBox(width: 8),
+                  Text('Thêm ngày mới', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'toggle_all',
+              child: Row(
+                children: [
+                  Icon(Icons.unfold_more_rounded, size: 16, color: Color(0xFF475569)),
+                  SizedBox(width: 8),
+                  Text('Thu gọn / Mở rộng tất cả', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: 'search',
+              child: Row(
+                children: [
+                  const Icon(Icons.search_rounded, size: 16, color: Color(0xFF475569)),
+                  const SizedBox(width: 8),
+                  Text(
+                    _isSearchVisible ? 'Ẩn thanh tìm kiếm' : 'Tìm kiếm trong lịch trình',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(color: const Color(0xFFF1F5F9), height: 1),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 40),
-        child: Column(
+    );
+  }
+
+  Widget _buildStatusBanner() {
+    if (_isPublished) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Lock / Role Status Banner
-            if (_isPublished) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
-                ),
-                child: Row(
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Icon(Icons.lock_outline_rounded, size: 18, color: Color(0xFFD97706)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Chế độ Chỉ xem (Đã xuất bản)',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Chuyến đi đã xuất bản công khai. Bạn không thể sửa điểm dừng khi đang ở chế độ này.',
+                    style: TextStyle(fontSize: 11, color: Color(0xFFB45309), height: 1.35),
+                  ),
+                  if (isOwner) ...[
+                    const SizedBox(height: 5),
+                    InkWell(
+                      onTap: _togglePublish,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.lock_open_rounded, size: 12, color: Color(0xFF065F46)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Hủy xuất bản để mở khóa chỉnh sửa',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF065F46),
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (isViewer) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+        ),
+        child: Row(
+          children: const [
+            Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF2563EB)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Bạn đang là Thành viên xem (Viewer) của chuyến đi này.',
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF1E40AF), fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (isEditor) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFECFDF5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFA7F3D0)),
+        ),
+        child: Row(
+          children: const [
+            Icon(Icons.edit_calendar_rounded, size: 18, color: Color(0xFF059669)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Bạn có quyền Cộng tác viên (Editor) để cùng lên lịch trình.',
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF065F46), fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildTripSummaryCard(double totalCost, double budgetTarget, int percentUsed, bool isOverBudget) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top Row: Title + Privacy Badge
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Icon(Icons.lock_outline_rounded, size: 20, color: Color(0xFFD97706)),
+                    Text(
+                      _itinerary.title,
+                      style: const TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.3,
+                      ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(Icons.near_me_rounded, size: 12, color: Color(0xFF059669)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Điểm đến: ${_itinerary.destination.isNotEmpty ? _itinerary.destination : 'Việt Nam'}',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Privacy Badge Tap
+              InkWell(
+                onTap: _togglePublish,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _isPublished ? const Color(0xFFD1FAE5) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _isPublished ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isPublished ? Icons.public_rounded : Icons.lock_outline_rounded,
+                        size: 11,
+                        color: _isPublished ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isPublished ? 'CÔNG KHAI' : 'RIÊNG TƯ',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: _isPublished ? const Color(0xFF065F46) : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          // 3 Metric Bento Tiles: Thời gian, Ngân sách, Điểm dừng
+          Row(
+            children: [
+              // 1. Date Tile
+              Expanded(
+                child: InkWell(
+                  onTap: _showTripDatePicker,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(Icons.calendar_today_rounded, size: 12, color: Color(0xFF059669)),
+                            SizedBox(width: 4),
+                            Text(
+                              'Thời gian',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          _formattedTripDateText,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_itinerary.daysCount} ngày',
+                          style: const TextStyle(fontSize: 9.5, color: Color(0xFF059669), fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // 2. Budget Tile
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    if (!canEditStops) {
+                      _showPermissionDeniedSnackBar('Bạn đang ở chế độ xem. Không có quyền điều chỉnh ngân sách.');
+                      return;
+                    }
+                    ItineraryBudgetSheet.show(
+                      context,
+                      itinerary: _itinerary,
+                      onBudgetChanged: (newBudget) {
+                        setState(() {
+                          _itinerary = _itinerary.copyWith(budgetTarget: newBudget);
+                          _hasUnsavedChanges = true;
+                        });
+                      },
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isOverBudget ? const Color(0xFFFFF1F2) : const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isOverBudget ? const Color(0xFFFECDD3) : const Color(0xFFBBF7D0),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.account_balance_wallet_rounded,
+                              size: 12,
+                              color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF059669),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Ngân sách',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: isOverBudget ? const Color(0xFFBE123C) : const Color(0xFF15803D),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          totalCost > 0
+                              ? '${(totalCost / 1000000).toStringAsFixed(1)}tr / ${(budgetTarget / 1000000).toStringAsFixed(1)}tr'
+                              : '0 / ${(budgetTarget / 1000000).toStringAsFixed(1)}tr',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: isOverBudget ? const Color(0xFFBE123C) : const Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        // Mini Progress Bar
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: Container(
+                            height: 4,
+                            width: double.infinity,
+                            color: const Color(0xFFE2E8F0),
+                            child: FractionallySizedBox(
+                              alignment: Alignment.centerLeft,
+                              widthFactor: (percentUsed / 100).clamp(0.0, 1.0),
+                              child: Container(
+                                color: isOverBudget ? const Color(0xFFE11D48) : const Color(0xFF059669),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // 3. Stops Tile
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: const [
+                          Icon(Icons.pin_drop_rounded, size: 12, color: Color(0xFF0284C7)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Điểm dừng',
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${_itinerary.stopCount} địa điểm',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_itinerary.backlogStops.length} trong kho',
+                        style: const TextStyle(fontSize: 9.5, color: Color(0xFFD97706), fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayTabsBar() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          // 1. "Tất cả" Tab
+          _buildDayTabItem(
+            tabIndex: 0,
+            label: 'Tất cả (${_itinerary.stopCount})',
+            icon: Icons.dashboard_outlined,
+            isSelected: _selectedDayTab == 0,
+          ),
+          const SizedBox(width: 6),
+
+          // 2. Individual Day Tabs
+          ..._itinerary.days.map((d) {
+            final isSelected = _selectedDayTab == d.dayNumber;
+            final badgeColor = _dayBadgeColors[(d.dayNumber - 1) % _dayBadgeColors.length];
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _buildDayTabItem(
+                tabIndex: d.dayNumber,
+                label: 'Ngày ${d.dayNumber}',
+                subBadge: '${d.stops.length}',
+                badgeColor: badgeColor,
+                isSelected: isSelected,
+              ),
+            );
+          }),
+
+          // 3. Wishlist Tab
+          _buildDayTabItem(
+            tabIndex: -1,
+            label: 'Kho lưu trữ',
+            subBadge: '${_itinerary.backlogStops.length}',
+            badgeColor: const Color(0xFFD97706),
+            icon: Icons.bookmark_added_rounded,
+            isSelected: _selectedDayTab == -1,
+          ),
+          const SizedBox(width: 6),
+
+          // 4. Quick Add Day Button
+          InkWell(
+            onTap: _handleAddNewDay,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: const [
+                  Icon(Icons.add_rounded, size: 15, color: Color(0xFF059669)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Thêm ngày',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF059669),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayTabItem({
+    required int tabIndex,
+    required String label,
+    String? subBadge,
+    Color? badgeColor,
+    IconData? icon,
+    required bool isSelected,
+  }) {
+    return InkWell(
+      onTap: () => setState(() => _selectedDayTab = tabIndex),
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF059669) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF047857) : const Color(0xFFE2E8F0),
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF059669).withValues(alpha: 0.25),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: isSelected ? Colors.white : const Color(0xFF64748B)),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? Colors.white : const Color(0xFF334155),
+              ),
+            ),
+            if (subBadge != null) ...[
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : (badgeColor != null ? badgeColor.withValues(alpha: 0.12) : const Color(0xFFF1F5F9)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  subBadge,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: isSelected
+                        ? Colors.white
+                        : (badgeColor ?? const Color(0xFF475569)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.search_rounded, size: 16, color: Color(0xFF64748B)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: TextField(
+              onChanged: (val) => setState(() => _searchQuery = val),
+              style: const TextStyle(fontSize: 12),
+              decoration: const InputDecoration(
+                hintText: 'Tìm địa điểm, món ăn, hoạt động...',
+                hintStyle: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+          ),
+          if (_searchQuery.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.clear_rounded, size: 14, color: Color(0xFF94A3B8)),
+              onPressed: () => setState(() => _searchQuery = ''),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDayTimelineCard(ItineraryDayModel day, int dIdx) {
+    final badgeColor = _dayBadgeColors[dIdx % _dayBadgeColors.length];
+    final dayCost = day.stops.fold(0.0, (acc, s) => acc + s.costEstimateNum);
+    final isExpanded = !_expandedDayIndices.contains(dIdx);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Day Header Bar
+          InkWell(
+            onTap: () => _toggleDay(dIdx),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: const BoxDecoration(
+                color: Color(0xFFFAFAFA),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+              ),
+              child: Row(
+                children: [
+                  // Day Badge (N1, N2...)
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: badgeColor,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      'N${day.dayNumber}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // Day Title & Details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                day.title,
+                                style: const TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF0F172A),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            InkWell(
+                              onTap: () => _showEditDayDialog(dIdx),
+                              child: const Icon(Icons.edit_rounded, size: 13, color: Color(0xFF94A3B8)),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${day.stops.length} điểm dừng${dayCost > 0 ? " · ${dayCost.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ" : ""}${day.date != null && day.date!.isNotEmpty ? " · ${day.date!}" : ""}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Actions: Add Stop, Delete Day, Chevron
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () => _showAddStopOptions(day.dayNumber),
+                        icon: const Icon(Icons.add_rounded, size: 14),
+                        label: const Text('Thêm điểm', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                      if (_itinerary.days.length > 1) ...[
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Xóa ngày này',
+                          onPressed: () => _handleDeleteDay(dIdx),
+                        ),
+                      ],
+                      const SizedBox(width: 2),
+                      Icon(
+                        isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        color: const Color(0xFF94A3B8),
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Timeline Body
+          if (isExpanded) ...[
+            if (day.stops.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                child: InkWell(
+                  onTap: () => _showAddStopOptions(day.dayNumber),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFFCBD5E1),
+                        style: BorderStyle.solid,
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.add_location_alt_outlined, size: 28, color: Color(0xFF059669)),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Chưa có điểm dừng nào trong Ngày ${day.dayNumber}',
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Chạm để chọn địa điểm, món ngon hoặc tạo điểm dừng mới',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+                child: Column(
+                  children: day.stops.asMap().entries.map((stopEntry) {
+                    final sIdx = stopEntry.key;
+                    final stop = stopEntry.value;
+                    final isLast = sIdx == day.stops.length - 1;
+                    return _buildTimelineStopItem(day, stop, sIdx, isLast);
+                  }).toList(),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimelineStopItem(ItineraryDayModel day, ItineraryStopModel stop, int sIdx, bool isLast) {
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Left: Timeline Axis with Node & Connector Line
+          SizedBox(
+            width: 30,
+            child: Column(
+              children: [
+                // Node
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD1FAE5),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF059669), width: 1.5),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${sIdx + 1}',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF065F46),
+                    ),
+                  ),
+                ),
+                // Connector Line
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      color: const Color(0xFFCBD5E1),
+                      margin: const EdgeInsets.symmetric(vertical: 2),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Right: Stop Card
+          Expanded(
+            child: Container(
+              margin: EdgeInsets.only(bottom: isLast ? 0 : 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Top Chips: Time, Transport, Category, Context Menu
+                  Row(
+                    children: [
+                      // Time Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.schedule_rounded, size: 10, color: Color(0xFF059669)),
+                            const SizedBox(width: 3),
+                            Text(
+                              '${stop.startTime} - ${stop.endTime}',
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+
+                      // Transport Mode
+                      if (stop.transportMode.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Text(
+                            stop.transportMode,
+                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                          ),
+                        ),
+
+                      const Spacer(),
+
+                      // Cost Pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD1FAE5),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          stop.costEstimateNum > 0
+                              ? '${stop.costEstimateNum.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
+                              : (stop.costEstimate != null && stop.costEstimate!.isNotEmpty ? stop.costEstimate! : 'Miễn phí'),
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF065F46),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+
+                      // More Menu
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert_rounded, size: 16, color: Color(0xFF94A3B8)),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        onSelected: (val) {
+                          if (val == 'edit') {
+                            ItineraryStopDetailSheet.show(
+                              context,
+                              stop: stop,
+                              dayNumber: day.dayNumber,
+                              onDelete: () => _handleDeleteStop(day.dayNumber, stop.id, stop.activity),
+                            );
+                          } else if (val == 'wishlist') {
+                            _handleMoveStopToWishlist(day.dayNumber, stop);
+                          } else if (val == 'delete') {
+                            _handleDeleteStop(day.dayNumber, stop.id, stop.activity);
+                          } else if (val.startsWith('move_')) {
+                            final targetDayNum = int.tryParse(val.split('_')[1]);
+                            if (targetDayNum != null) {
+                              _handleMoveStopToDay(day.dayNumber, targetDayNum, stop);
+                            }
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit_outlined, size: 15, color: Color(0xFF475569)),
+                                SizedBox(width: 8),
+                                Text('Chỉnh sửa chi tiết', style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          ..._itinerary.days
+                              .where((d) => d.dayNumber != day.dayNumber)
+                              .map((d) => PopupMenuItem(
+                                    value: 'move_${d.dayNumber}',
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.drive_file_move_outline, size: 15, color: Color(0xFF475569)),
+                                        const SizedBox(width: 8),
+                                        Text('Chuyển sang Ngày ${d.dayNumber}', style: const TextStyle(fontSize: 12)),
+                                      ],
+                                    ),
+                                  )),
+                          const PopupMenuItem(
+                            value: 'wishlist',
+                            child: Row(
+                              children: [
+                                Icon(Icons.bookmark_add_outlined, size: 15, color: Color(0xFFD97706)),
+                                SizedBox(width: 8),
+                                Text('Chuyển vào Kho lưu trữ', style: TextStyle(fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline_rounded, size: 15, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text('Xóa điểm dừng', style: TextStyle(fontSize: 12, color: Colors.red)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  // Stop Title & Location (Tap to view detail)
+                  InkWell(
+                    onTap: () {
+                      ItineraryStopDetailSheet.show(
+                        context,
+                        stop: stop,
+                        dayNumber: day.dayNumber,
+                        onDelete: () => _handleDeleteStop(day.dayNumber, stop.id, stop.activity),
+                      );
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          stop.activity,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            const Icon(Icons.place_outlined, size: 11, color: Color(0xFF64748B)),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(
+                                stop.location,
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (stop.description != null && stop.description!.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            stop.description!,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF475569), fontStyle: FontStyle.italic),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWishlistSection({required bool isStandalone}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Wishlist Header
+          InkWell(
+            onTap: isStandalone ? null : () => setState(() => _isWishlistExpanded = !_isWishlistExpanded),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.bookmark_added_rounded, size: 16, color: Color(0xFFD97706)),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            'Chế độ Chỉ xem sau khi xuất bản:',
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
+                            'Kho lưu trữ & Chờ xếp lịch',
+                            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                           ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'Chuyến đi đã được xuất bản công khai và khóa ở chế độ chỉ xem. Bạn (và các thành viên) không thể chỉnh sửa điểm dừng, ngày đi hoặc mời thêm thành viên nữa.',
-                            style: TextStyle(fontSize: 11, color: Color(0xFFB45309), height: 1.35),
+                          Text(
+                            '${_itinerary.backlogStops.length} địa điểm đang chờ xếp vào các ngày',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                           ),
-                          if (isOwner) ...[
-                            const SizedBox(height: 6),
-                            InkWell(
-                              onTap: _togglePublish,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  Icon(Icons.lock_open_rounded, size: 13, color: Color(0xFF065F46)),
-                                  SizedBox(width: 4),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (!isStandalone)
+                    Icon(
+                      _isWishlistExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                      color: const Color(0xFF64748B),
+                      size: 20,
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Wishlist Content
+          if (isStandalone || _isWishlistExpanded) ...[
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                children: [
+                  // Quick add row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: TextField(
+                            controller: _quickWishlistController,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: const InputDecoration(
+                              hintText: 'Nhập nhanh tên địa điểm muốn lưu...',
+                              hintStyle: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            onSubmitted: (_) => _handleQuickAddWishlist(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _handleQuickAddWishlist,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF059669),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          minimumSize: Size.zero,
+                        ),
+                        child: const Text('Lưu', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => ItineraryPlacePickerSheet.show(
+                          context,
+                          tripId: _itinerary.id,
+                          dayNumber: 0,
+                          initialMode: 'knn_suggestions',
+                          onSelectPlace: (stop) => _handleAddStop(0, stop),
+                        ),
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF047857)),
+                        label: const Text(
+                          'Đề xuất theo gu đoàn',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: const Color(0xFFECFDF5),
+                          side: const BorderSide(color: Color(0xFFA7F3D0)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  if (_itinerary.backlogStops.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        'Kho lưu trữ đang trống. Bạn có thể lưu các điểm đến yêu thích tại đây để xếp lịch sau.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                      ),
+                    )
+                  else
+                    ..._itinerary.backlogStops.map((stop) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
-                                    'Hủy xuất bản để mở khóa chỉnh sửa',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF065F46),
-                                      decoration: TextDecoration.underline,
-                                    ),
+                                    stop.activity,
+                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    '${stop.category} · ${stop.location}',
+                                    style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
                             ),
+                            PopupMenuButton<int>(
+                              icon: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFD1FAE5),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Text(
+                                      'Xếp vào ngày',
+                                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
+                                    ),
+                                    SizedBox(width: 2),
+                                    Icon(Icons.arrow_drop_down_rounded, size: 14, color: Color(0xFF065F46)),
+                                  ],
+                                ),
+                              ),
+                              onSelected: (targetDayNum) => _handleMoveWishlistToDay(targetDayNum, stop),
+                              itemBuilder: (context) => _itinerary.days
+                                  .map((d) => PopupMenuItem<int>(
+                                        value: d.dayNumber,
+                                        child: Text('Xếp vào Ngày ${d.dayNumber}', style: const TextStyle(fontSize: 12)),
+                                      ))
+                                  .toList(),
+                            ),
                           ],
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyTripPlaceholder() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFFD1FAE5),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.add_location_alt_rounded, size: 36, color: Color(0xFF065F46)),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'Lịch trình chưa có ngày hay địa điểm nào',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Hãy tạo ngày đầu tiên và thêm các địa điểm tham quan để bắt đầu thiết kế lịch trình theo ý bạn.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _handleAddNewDay,
+                icon: const Icon(Icons.calendar_today_rounded, size: 14),
+                label: const Text('Thêm Ngày 1', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF059669),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
-            ] else if (isViewer) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.visibility_outlined, size: 20, color: Color(0xFF2563EB)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
-                            'Chế độ xem (Thành viên)',
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF1E40AF)),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Bạn có quyền xem và theo dõi toàn bộ lịch trình nhưng không thể chỉnh sửa điểm dừng.',
-                            style: TextStyle(fontSize: 11, color: Color(0xFF3B82F6), height: 1.3),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => _showAddStopOptions(1),
+                icon: const Icon(Icons.add_location_rounded, size: 14, color: Color(0xFF059669)),
+                label: const Text('Thêm điểm dừng', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF059669))),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFF059669)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
               ),
-            ] else if (isEditor) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoSearchResultsPlaceholder() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: [
+          const Icon(Icons.search_off_rounded, size: 36, color: Color(0xFF94A3B8)),
+          const SizedBox(height: 10),
+          Text(
+            'Không tìm thấy điểm dừng nào khớp với "$_searchQuery"',
+            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlaceExplorerBanner() {
+    final activeDayNum = _selectedDayTab > 0 ? _selectedDayTab : 1;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF064E3B), Color(0xFF065F46)],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF064E3B).withValues(alpha: 0.2),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.explore_rounded, color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Text(
+                  'Khám phá thêm địa điểm du lịch',
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Tra cứu danh thắng, ẩm thực và thêm vào lịch trình chỉ với 1 chạm.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFFD1FAE5)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () => ItineraryPlacePickerSheet.show(
+              context,
+              tripId: _itinerary.id,
+              dayNumber: activeDayNum,
+              initialMode: 'knn_suggestions',
+              onSelectPlace: (stop) => _handleAddStop(activeDayNum, stop),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: const Color(0xFF064E3B),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              elevation: 0,
+            ),
+            child: const Text('Mở thư viện', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomActionBar() {
+    final activeDayNum = _selectedDayTab > 0 ? _selectedDayTab : 1;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: const Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            // Primary Add Stop Button
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _showAddStopOptions(activeDayNum),
+                icon: const Icon(Icons.add_location_alt_rounded, size: 18),
+                label: Text(
+                  _selectedDayTab > 0 ? 'Thêm điểm vào Ngày $activeDayNum' : 'Thêm điểm dừng',
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF059669),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+
+            // AI / Place Explorer Recommendation Button
+            InkWell(
+              onTap: () => ItineraryPlacePickerSheet.show(
+                context,
+                tripId: _itinerary.id,
+                dayNumber: activeDayNum,
+                initialMode: 'knn_suggestions',
+                onSelectPlace: (stop) => _handleAddStop(activeDayNum, stop),
+              ),
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: const Color(0xFFA7F3D0)),
                 ),
                 child: Row(
-                  children: [
-                    const Icon(Icons.edit_calendar_rounded, size: 20, color: Color(0xFF059669)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
-                            'Chế độ cùng lên lịch',
-                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
-                          ),
-                          SizedBox(height: 2),
-                          Text(
-                            'Bạn có toàn quyền thêm, sửa, xóa điểm dừng và ngày nhưng không thể công bố chuyến đi hoặc thêm thành viên khác.',
-                            style: TextStyle(fontSize: 11, color: Color(0xFF047857), height: 1.3),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Filter & Quick Add Toolbar (Matching Share_Locations ItineraryFilterBar.tsx)
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Search places in trip
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.search_rounded, size: 15, color: Color(0xFF94A3B8)),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: TextField(
-                              onChanged: (val) => setState(() => _searchQuery = val),
-                              style: const TextStyle(fontSize: 11.5),
-                              decoration: const InputDecoration(
-                                hintText: 'Tìm địa điểm, món ăn...',
-                                hintStyle: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(vertical: 6),
-                              ),
-                            ),
-                          ),
-                          if (_searchQuery.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 13, color: Color(0xFF94A3B8)),
-                              onPressed: () => setState(() => _searchQuery = ''),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-
-                  // Expand/Collapse All Days
-                  InkWell(
-                    onTap: _toggleAllDays,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(isAllExpanded ? Icons.unfold_less_rounded : Icons.unfold_more_rounded, size: 13, color: const Color(0xFF475569)),
-                          const SizedBox(width: 3),
-                          Text(
-                            isAllExpanded ? 'Thu gọn' : 'Mở rộng',
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-
-                  // Add Day Button
-                  ElevatedButton.icon(
-                    onPressed: _handleAddNewDay,
-                    icon: const Icon(Icons.add_rounded, size: 13),
-                    label: const Text('Thêm ngày', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF065F46),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            if (_itinerary.days.isEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFD1FAE5),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.add_location_alt_rounded, size: 36, color: Color(0xFF065F46)),
-                    ),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'Lịch trình chưa có ngày hay địa điểm nào',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Hãy tạo ngày đầu tiên và thêm các địa điểm tham quan để bắt đầu thiết kế lịch trình theo ý bạn.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: _handleAddNewDay,
-                          icon: const Icon(Icons.calendar_today_rounded, size: 14),
-                          label: const Text('Thêm Ngày 1', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF065F46),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          onPressed: () => _showAddStopOptions(1),
-                          icon: const Icon(Icons.add_location_rounded, size: 14, color: Color(0xFF065F46)),
-                          label: const Text('Thêm điểm dừng', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF065F46))),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF065F46)),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              )
-            else if (displayedDays.isEmpty && _searchQuery.isNotEmpty)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Column(
-                  children: [
-                    const Icon(Icons.search_off_rounded, size: 36, color: Color(0xFF94A3B8)),
-                    const SizedBox(height: 10),
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.auto_awesome_rounded, size: 18, color: Color(0xFF059669)),
+                    SizedBox(width: 4),
                     Text(
-                      'Không tìm thấy điểm dừng nào khớp với "$_searchQuery"',
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              )
-            else
-              // Timeline Days List
-              ...displayedDays.asMap().entries.map((entry) {
-              final dIdx = entry.key;
-              final day = entry.value;
-              final isExpanded = _expandedDayIndices.contains(dIdx);
-              final badgeColor = _dayBadgeColors[dIdx % _dayBadgeColors.length];
-              final dayCost = day.stops.fold(0.0, (acc, s) => acc + s.costEstimateNum);
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.02),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Day Header Bar
-                    InkWell(
-                      onTap: () => _toggleDay(dIdx),
-                      borderRadius: BorderRadius.circular(18),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  // Day Badge (N1, N2...)
-                                  Container(
-                                    width: 34,
-                                    height: 34,
-                                    decoration: BoxDecoration(
-                                      color: badgeColor,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      'N${day.dayNumber}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-
-                                  // Day Title & Details
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Flexible(
-                                              child: Text(
-                                                day.title,
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Color(0xFF0F172A),
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            InkWell(
-                                              onTap: () => _showEditDayDialog(dIdx),
-                                              child: const Icon(Icons.edit_rounded, size: 12, color: Color(0xFF94A3B8)),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          '${day.stops.length} điểm dừng${dayCost > 0 ? ' • Dự tính: ${dayCost.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ' : ''}${day.date != null ? ' • ${day.date}' : ''}',
-                                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Action Buttons (Add Stop, Delete Day, Toggle Chevron)
-                            Row(
-                              children: [
-                                // Add Stop Button
-                                ElevatedButton.icon(
-                                  onPressed: () => _showAddStopOptions(day.dayNumber),
-                                  icon: const Icon(Icons.add_rounded, size: 13),
-                                  label: const Text('Thêm điểm', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800)),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF065F46),
-                                    foregroundColor: Colors.white,
-                                    elevation: 0,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    minimumSize: Size.zero,
-                                  ),
-                                ),
-                                if (_itinerary.days.length > 1) ...[
-                                  const SizedBox(width: 4),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    onPressed: () => _handleDeleteDay(dIdx),
-                                  ),
-                                ],
-                                const SizedBox(width: 4),
-                                Icon(
-                                  isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                  color: const Color(0xFF64748B),
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Stops List
-                    if (isExpanded) ...[
-                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                      if (day.stops.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                          child: Column(
-                            children: [
-                              const Icon(Icons.add_location_alt_outlined, size: 32, color: Color(0xFFCBD5E1)),
-                              const SizedBox(height: 6),
-                              const Text(
-                                'Chưa có điểm dừng nào trong ngày này',
-                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: () => _showAddStopOptions(day.dayNumber),
-                                icon: const Icon(Icons.add_rounded, size: 14, color: Color(0xFF065F46)),
-                                label: const Text('Thêm điểm dừng đầu tiên', style: TextStyle(fontSize: 11.5, color: Color(0xFF065F46), fontWeight: FontWeight.w800)),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: Color(0xFF065F46)),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            children: day.stops.asMap().entries.map((stopEntry) {
-                              final sIdx = stopEntry.key;
-                              final stop = stopEntry.value;
-
-                              return Container(
-                                margin: EdgeInsets.only(bottom: sIdx < day.stops.length - 1 ? 10 : 0),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    // Order Badge
-                                    Container(
-                                      width: 24,
-                                      height: 24,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFD1FAE5),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        '${sIdx + 1}',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w900,
-                                          color: Color(0xFF065F46),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-
-                                    // Main Stop Details
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            stop.activity,
-                                            style: const TextStyle(
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.w800,
-                                              color: Color(0xFF0F172A),
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Wrap(
-                                            spacing: 6,
-                                            runSpacing: 4,
-                                            children: [
-                                              // Time Pill
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize: MainAxisSize.min,
-                                                  children: [
-                                                    const Icon(Icons.schedule_rounded, size: 10, color: Color(0xFF065F46)),
-                                                    const SizedBox(width: 3),
-                                                    Text(
-                                                      '${stop.startTime} - ${stop.endTime}',
-                                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              // Transport Pill
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white,
-                                                  borderRadius: BorderRadius.circular(4),
-                                                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                                                ),
-                                                child: Text(
-                                                  stop.transportMode,
-                                                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-                                                ),
-                                              ),
-                                              // Category
-                                              if (stop.category.isNotEmpty)
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white,
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                                                  ),
-                                                  child: Text(
-                                                    stop.category,
-                                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                          if (stop.description != null && stop.description!.isNotEmpty) ...[
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              stop.description!,
-                                              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-
-                                    // Cost & Context Menu
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          stop.costEstimateNum > 0
-                                              ? '${stop.costEstimateNum.toInt().toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')} đ'
-                                              : (stop.costEstimate != null && stop.costEstimate!.isNotEmpty ? stop.costEstimate! : 'Miễn phí'),
-                                          style: const TextStyle(
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w800,
-                                            color: Color(0xFF065F46),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        PopupMenuButton<String>(
-                                          icon: const Icon(Icons.more_horiz_rounded, size: 18, color: Color(0xFF94A3B8)),
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onSelected: (val) {
-                                            if (val == 'edit') {
-                                              ItineraryStopDetailSheet.show(
-                                                context,
-                                                stop: stop,
-                                                dayNumber: day.dayNumber,
-                                                onDelete: () => _handleDeleteStop(day.dayNumber, stop.id, stop.activity),
-                                              );
-                                            } else if (val == 'wishlist') {
-                                              _handleMoveStopToWishlist(day.dayNumber, stop);
-                                            } else if (val == 'delete') {
-                                              _handleDeleteStop(day.dayNumber, stop.id, stop.activity);
-                                            } else if (val.startsWith('move_')) {
-                                              final targetDayNum = int.tryParse(val.split('_')[1]);
-                                              if (targetDayNum != null) {
-                                                _handleMoveStopToDay(day.dayNumber, targetDayNum, stop);
-                                              }
-                                            }
-                                          },
-                                          itemBuilder: (context) => [
-                                            const PopupMenuItem(
-                                              value: 'edit',
-                                              child: Text('Chỉnh sửa chi tiết', style: TextStyle(fontSize: 12.5)),
-                                            ),
-                                            ..._itinerary.days
-                                                .where((d) => d.dayNumber != day.dayNumber)
-                                                .map((d) => PopupMenuItem(
-                                                      value: 'move_${d.dayNumber}',
-                                                      child: Text('Chuyển sang Ngày ${d.dayNumber}', style: const TextStyle(fontSize: 12.5)),
-                                                    )),
-                                            const PopupMenuItem(
-                                              value: 'wishlist',
-                                              child: Text('Chuyển vào Kho lưu trữ', style: TextStyle(fontSize: 12.5)),
-                                            ),
-                                            const PopupMenuItem(
-                                              value: 'delete',
-                                              child: Text('Xóa địa điểm', style: TextStyle(fontSize: 12.5, color: Colors.red)),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                    ],
-                  ],
-                ),
-              );
-            }),
-
-            const SizedBox(height: 6),
-
-            // Wishlist / Backlog Storage Section (Matching Share_Locations ItineraryWishlistSection.tsx)
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // Wishlist Header
-                  InkWell(
-                    onTap: () => setState(() => _isWishlistExpanded = !_isWishlistExpanded),
-                    borderRadius: BorderRadius.circular(18),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(7),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFEF3C7),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.bookmark_added_rounded, size: 16, color: Color(0xFFD97706)),
-                              ),
-                              const SizedBox(width: 10),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Kho lưu trữ & Chờ xếp lịch',
-                                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                                  ),
-                                  Text(
-                                    '${_itinerary.backlogStops.length} địa điểm đang chờ xếp vào các ngày',
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          Icon(
-                            _isWishlistExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                            color: const Color(0xFF64748B),
-                            size: 20,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Wishlist Content
-                  if (_isWishlistExpanded) ...[
-                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        children: [
-                          // Quick add row
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                                  ),
-                                  child: TextField(
-                                    controller: _quickWishlistController,
-                                    style: const TextStyle(fontSize: 12),
-                                    decoration: const InputDecoration(
-                                      hintText: 'Nhập nhanh tên địa điểm muốn lưu...',
-                                      hintStyle: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
-                                      border: InputBorder.none,
-                                      isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(vertical: 8),
-                                    ),
-                                    onSubmitted: (_) => _handleQuickAddWishlist(),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: _handleQuickAddWishlist,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF065F46),
-                                  foregroundColor: Colors.white,
-                                  elevation: 0,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  minimumSize: Size.zero,
-                                ),
-                                child: const Text('Lưu', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          Row(
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () => ItineraryPlacePickerSheet.show(
-                                  context,
-                                  tripId: _itinerary.id,
-                                  dayNumber: 0,
-                                  initialMode: 'knn_suggestions',
-                                  onSelectPlace: (stop) => _handleAddStop(0, stop),
-                                ),
-                                icon: const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF047857)),
-                                label: const Text(
-                                  'Đề xuất theo gu đoàn',
-                                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFECFDF5),
-                                  side: const BorderSide(color: Color(0xFFA7F3D0)),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          if (_itinerary.backlogStops.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 12),
-                              child: Text(
-                                'Kho lưu trữ đang trống. Bạn có thể lưu các điểm đến yêu thích tại đây để xếp lịch sau.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
-                              ),
-                            )
-                          else
-                            ..._itinerary.backlogStops.map((stop) {
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            stop.activity,
-                                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          Text(
-                                            '${stop.category} • ${stop.location}',
-                                            style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    PopupMenuButton<int>(
-                                      icon: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFD1FAE5),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: const [
-                                            Text(
-                                              'Xếp vào ngày',
-                                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF065F46)),
-                                            ),
-                                            SizedBox(width: 2),
-                                            Icon(Icons.arrow_drop_down_rounded, size: 14, color: Color(0xFF065F46)),
-                                          ],
-                                        ),
-                                      ),
-                                      onSelected: (targetDayNum) => _handleMoveWishlistToDay(targetDayNum, stop),
-                                      itemBuilder: (context) => _itinerary.days
-                                          .map((d) => PopupMenuItem<int>(
-                                                value: d.dayNumber,
-                                                child: Text('Xếp vào Ngày ${d.dayNumber}', style: const TextStyle(fontSize: 12)),
-                                              ))
-                                          .toList(),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                        ],
+                      'Gợi ý',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF065F46),
                       ),
                     ),
                   ],
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Place Explorer Drawer Trigger Banner (Matching ItineraryPlacePickerDrawer.tsx)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF064E3B), Color(0xFF065F46)],
                 ),
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF064E3B).withValues(alpha: 0.2),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.explore_rounded, color: Colors.white, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          'Khám phá thêm địa điểm du lịch',
-                          style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Colors.white),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Tra cứu danh thắng, ẩm thực và thêm vào lịch trình chỉ với 1 chạm.',
-                          style: TextStyle(fontSize: 11, color: Color(0xFFD1FAE5)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => ItineraryPlacePickerSheet.show(
-                      context,
-                      tripId: _itinerary.id,
-                      dayNumber: 0,
-                      initialMode: 'knn_suggestions',
-                      onSelectPlace: (stop) => _handleAddStop(0, stop),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF064E3B),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      elevation: 0,
-                    ),
-                    child: const Text('Mở thư viện', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
-                  ),
-                ],
               ),
             ),
           ],
