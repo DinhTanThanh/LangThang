@@ -220,13 +220,14 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
 
   List<FavoriteItemModel> _getFilteredFavorites() {
     var list = _allFavorites.where((item) {
+      final notTrip = item.targetType != 3;
       final matchesTab = _selectedTab == FavoriteTargetType.all || item.targetType == _selectedTab.value;
       final query = _searchQuery.toLowerCase().trim();
       final matchesSearch = query.isEmpty ||
           item.title.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
           item.categoryTag.toLowerCase().contains(query);
-      return matchesTab && matchesSearch;
+      return notTrip && matchesTab && matchesSearch;
     }).toList();
 
     if (_sortBy == 'rating') {
@@ -239,8 +240,9 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
   }
 
   int _getCountForType(FavoriteTargetType type) {
-    if (type == FavoriteTargetType.all) return _allFavorites.length;
-    return _allFavorites.where((f) => f.targetType == type.value).length;
+    final validList = _allFavorites.where((f) => f.targetType != 3);
+    if (type == FavoriteTargetType.all) return validList.length;
+    return validList.where((f) => f.targetType == type.value).length;
   }
 
   @override
@@ -280,7 +282,7 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${_allFavorites.length} mục đã lưu trong tài khoản của bạn',
+                          '${_allFavorites.where((f) => f.targetType != 3).length} mục đã lưu trong tài khoản của bạn',
                           style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFF64748B),

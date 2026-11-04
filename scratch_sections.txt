@@ -1,0 +1,419 @@
+0: TÀI LIỆU THIẾT KẾ KIẾN TRÚC & ĐẶC TẢ APICÁ NHÂN HÓA ĐỊA ĐIỂM VÀ BỘ SƯU TẬP TRANG CHỦ
+1: Dual-Context Recommendation Engine, Lego Caching & Complete REST API ContractHệ thống Mạng xã hội & Khám phá Địa điểm Du lịch (LangThang)
+2: Dự án:
+3: Hệ thống Mạng Xã hội Chia sẻ & Đề xuất Địa điểm Du lịch
+4: Kiến trúc triển khai:
+5: Dual-Context Engine (Physical GPS + Intent Destination Queue) kết hợp Lego Caching
+6: Công nghệ cốt lõi:
+7: Backend: .NET 8, FastEndpoints, Dapper, EF Core, Redis, SQL Server Spatial | Frontend: React 18, TypeScript, Tailwind
+8: Phạm vi tài liệu:
+9: Đặc tả Thuật toán Cá nhân hóa 3 Kệ Trang chủ & Hợp đồng API (Endpoints, Parameters, Schemas, JSON Samples)
+10: Phiên bản / Cập nhật:
+11: Version 2.5 (Enterprise Production Standard) · Tháng 11 / 2026
+12: 1. TỔNG QUAN HỆ THỐNG VÀ BÀI TOÁN CÁ NHÂN HÓA TRANG CHỦ
+13: Trang chủ của nền tảng du lịch LangThang được thiết kế để giải quyết đồng thời 3 nhu cầu khám phá đặc thù của người dùng:
+14: Kệ 1 - Nhu cầu tại chỗ (Physical Spontaneous Context): Gợi ý các địa điểm ăn uống, cà phê, check-in chất lượng ngay trong bán kính thực tế xung quanh tọa độ GPS người dùng đang đứng (ví dụ: đang ở Quận 1, TP.HCM tìm quán ngon gần nhất trong phạm vi 2–5km).
+15: Kệ 2 - Nhu cầu chuyến đi sắp tới (Destination Intent Context): Người dùng ở TP.HCM nhưng đang tìm kiếm, xem địa điểm hoặc có kế hoạch đi Nha Trang, Đà Lạt vào cuối tuần. Kệ 2 chủ động cung cấp các địa điểm hàng đầu tại các tỉnh ý định người dùng đang quan tâm, hỗ trợ chuyển tab linh hoạt.
+16: Kệ 3 - Bộ sưu tập ngữ cảnh (Contextual Curated Collections): Các bộ sưu tập du lịch được tự động chấm điểm và re-rank thời gian thực (Real-time) theo khoảng cách GPS, tỉnh điểm đến và gu sở thích danh mục, hiển thị xen kẽ với các vùng miền danh thắng.
+17: 📌 TIÊU CHUẨN THIẾT KẾ DOANH NGHIỆP
+18: 1. Dữ liệu thật 100%: Tuyệt đối không sử dụng dữ liệu giả (mock/hardcoded) ở client; toàn bộ thông tin tính từ tọa độ, tỉnh và danh mục thật trong Database.
+19: 2. Thời gian phản hồi cực nhanh: 10ms – 25ms nhờ kiến trúc Lego Caching tại Redis kết hợp chấm điểm trên RAM.
+20: 3. Cache Hit Rate > 95%: Giảm thiểu tối đa truy vấn đè nặng lên SQL Server Database.
+21: 4. Tối ưu bộ nhớ: Không cache theo từng User ID để tránh bùng nổ dung lượng RAM Redis.
+22: 2. THU THẬP & CHUẨN HÓA TÍN HIỆU NGỮ CẢNH (DEVICE CONTEXT ENGINE)
+23: Mọi tín hiệu ngữ cảnh được module Frontend (src/utils/deviceContext.ts) tự động thu thập từ hành vi tự nhiên của người dùng mà không yêu cầu đăng nhập hay trả lời khảo sát bắt buộc:
+24: Tín hiệu thu thập
+25: Cơ chế tính điểm & Lưu trữ
+26: Mục đích sử dụng
+27: Vị trí GPS Vật lý(Physical Lat/Lng)
+28: Trích xuất qua navigator.geolocation. Hàm snapGpsToGrid làm tròn 2 số lẻ thập phân (~1.1km) tạo Geohash gridKey = lat_XX.XX_lng_YY.YY.
+29: Bảo vệ quyền riêng tư người dùng; tạo GridKey cố định để tái sử dụng Lego Cache tại Redis mà không bị phân mảnh cache.
+30: Hàng đợi Điểm đến Ý định(Multi-Destination Queue)
+31: Lưu tối đa 3 tỉnh gần nhất (langthang_intent_provinces_v2). Gõ tìm kiếm/chọn filter Tỉnh: +3 điểm. Xem chi tiết địa điểm: +1 điểm (>= 2đ mới lưu). Hạn 48h.
+32: Giải quyết bài toán người dùng cùng lúc quan tâm nhiều nơi (ví dụ vừa tìm Khánh Hòa, vừa tìm Đà Lạt), không bị tỉnh mới xóa đè mất tỉnh cũ.
+33: Bảng điểm Sở thích Danh mục(Category Affinity Scores)
+34: Lưu bảng điểm (langthang_category_scores_v2). Chọn filter Danh mục: +3 điểm. Xem địa điểm thuộc danh mục: +1 điểm. Trích xuất Top 3 categoryId cao nhất.
+35: Xác định gu sở thích hiện tại (Cà phê, Hải sản, Resort, Check-in...) để ưu tiên địa điểm và bộ sưu tập đúng gu lên đầu.
+36: Cơ chế Reactive Event-Driven 0ms: Khi người dùng tìm kiếm từ khóa, chọn filter Tỉnh hoặc Danh mục, hàm recordSearchIntent phát sự kiện CustomEvent window.dispatchEvent(new CustomEvent('langthang:intent_changed')). Các component trang chủ lắng nghe và re-render / gọi API cập nhật tức thì trong 0ms.
+37: 3. ĐẶC TẢ KỸ THUẬT GIAO TIẾP API (API TECHNICAL SPECIFICATIONS)
+38: Trang chủ sử dụng 3 API chuẩn RESTful chính để lấy toàn bộ dữ liệu cho 3 kệ và các khu vực danh thắng:
+39: Phương thức
+40: Endpoint URL
+41: Chức năng chính
+42: Tần suất gọi
+43: GET
+44: /api/recommendations/home-feed
+45: Lấy Kệ 1 (Địa điểm quanh GPS) và Kệ 2 (Địa điểm theo các Tỉnh ý định)
+46: Khi vào trang chủ hoặc khi GPS/Ý định đổi
+47: GET
+48: /api/collections/featured
+49: Lấy Kệ 3 (Danh sách Bộ sưu tập nổi bật đã cá nhân hóa theo GPS & Intent)
+50: Khi vào trang chủ hoặc khi Ý định đổi
+51: GET
+52: /api/regions
+53: Lấy danh sách các Khu vực / Vùng miền danh lam để hiển thị xen kẽ
+54: Khi vào trang chủ (Cache trình duyệt)
+55: 3.1. Endpoint 1: GET /api/recommendations/home-feed
+56: API trung tâm cung cấp dữ liệu cho Kệ 1 (Nearby Physical) và Kệ 2 (Multi-Destination Intent).
+57: • Endpoint: GET /api/recommendations/home-feed• Quyền truy cập: Công khai (Anonymous). Hỗ trợ cả khách vãng lai và người dùng đã đăng nhập.• Rate Limiting: general_api (60 req/phút theo IP hoặc User ID).• HTTP Headers khuyến nghị:  - X-Device-Id: UUID ẩn danh lưu ở localStorage (ví dụ: c3f94e18-8f8a-4c91-a20c-772b1234abcd)  - Authorization: Bearer {token} (Tùy chọn, nếu đã đăng nhập để nhận diện lịch sử tương tác)
+58: Bảng tham số đầu vào (Query Parameters):
+59: Tham số
+60: Kiểu dữ liệu
+61: Bắt buộc
+62: Giá trị mặc định
+63: Mô tả & Ví dụ
+64: lat
+65: double?
+66: Không
+67: 10.762622 (TP.HCM)
+68: Vĩ độ GPS của người dùng. Backend tự snap về lưới ~1.1km.
+69: lng
+70: double?
+71: Không
+72: 106.660172 (TP.HCM)
+73: Kinh độ GPS của người dùng.
+74: intentProvinceId
+75: int?
+76: Không
+77: null
+78: ID tỉnh ý định ưu tiên số 1 (ví dụ: 32 - Khánh Hòa).
+79: intentProvinceIds
+80: string?
+81: Không
+82: null
+83: Danh sách ID các tỉnh ý định cách nhau bởi dấu phẩy (ví dụ: '32,24,1'). Tối đa 3 tỉnh.
+84: intentLabel
+85: string?
+86: Không
+87: null
+88: Tên nhãn hiển thị của tỉnh ý định (ví dụ: 'Tỉnh Khánh Hòa').
+89: topCategoryIds
+90: string?
+91: Không
+92: null
+93: Danh sách ID danh mục người dùng quan tâm (ví dụ: '2,5,8'). Dùng để tính Category Bonus.
+94: excludePlaceIds
+95: string?
+96: Không
+97: null
+98: Danh sách PlaceId cần loại trừ khỏi kết quả để tránh trùng lặp.
+99: topK
+100: int
+101: Không
+102: 12
+103: Số lượng địa điểm tối đa lấy cho mỗi kệ (giới hạn từ 4 đến 24).
+104: Cấu trúc DTO phản hồi (Response Data Structure):
+105: • physicalProvinceId (int?): ID tỉnh tương ứng với vị trí GPS hiện tại.• physicalProvinceName (string?): Tên tỉnh vị trí GPS (ví dụ: 'Thành phố Hồ Chí Minh').• shelf1NearbyPlaces (Array<NearbyPlaceItem>): Danh sách địa điểm Kệ 1, kèm trường distanceKm (khoảng cách thực tế) và isSaved.• shelf2IntentGroups (Array<IntentProvinceGroupDto>): Danh sách nhóm địa điểm Kệ 2 theo từng tỉnh ý định (provinceId, provinceName, intentLabel, places).
+106: // Mẫu dữ liệu JSON trả về từ GET /api/recommendations/home-feed
+107: {
+108:   "success": true,
+109:   "data": {
+110:     "physicalProvinceId": 27,
+111:     "physicalProvinceName": "Thành phố Hồ Chí Minh",
+112:     "shelf1NearbyPlaces": [
+113:       {
+114:         "placeId": 142,
+115:         "name": "The Workshop Coffee",
+116:         "coverImageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb",
+117:         "mediaUrls": ["https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb"],
+118:         "address": "27 Ngô Đức Kế, Bến Nghé, Quận 1",
+119:         "provinceName": "Thành phố Hồ Chí Minh",
+120:         "districtName": "Quận 1",
+121:         "categoryName": "Quán Cà Phê",
+122:         "avgRating": 4.8,
+123:         "reviewCount": 128,
+124:         "minPrice": 60000,
+125:         "maxPrice": 120000,
+126:         "distanceKm": 1.25,
+127:         "latitude": 10.7745,
+128:         "longitude": 106.7042,
+129:         "isSaved": false
+130:       }
+131:     ],
+132:     "intentProvinceId": 32,
+133:     "intentProvinceName": "Khánh Hòa",
+134:     "intentLabel": "Tỉnh Khánh Hòa",
+135:     "shelf2IntentGroups": [
+136:       {
+137:         "provinceId": 32,
+138:         "provinceName": "Khánh Hòa",
+139:         "intentLabel": "Tỉnh Khánh Hòa",
+140:         "places": [
+141:           {
+142:             "placeId": 89,
+143:             "name": "Tháp Bà Ponagar Nha Trang",
+144:             "coverImageUrl": "https://images.unsplash.com/photo-1596422846543-75c6fc197f07",
+145:             "address": "Đường 2 Tháng 4, Vĩnh Phước, Nha Trang",
+146:             "provinceName": "Khánh Hòa",
+147:             "categoryName": "Di Tích Lịch Sử",
+148:             "avgRating": 4.9,
+149:             "reviewCount": 354,
+150:             "minPrice": 30000,
+151:             "maxPrice": 30000,
+152:             "isSaved": true
+153:           }
+154:         ]
+155:       }
+156:     ],
+157:     "generatedAt": "2026-11-03T11:30:00Z"
+158:   },
+159:   "message": "Lấy dữ liệu trang chủ thành công",
+160:   "errors": null
+161: }
+162: 3.2. Endpoint 2: GET /api/collections/featured
+163: API cung cấp danh sách Bộ sưu tập du lịch được cá nhân hóa và chấm điểm theo tọa độ GPS, tỉnh điểm đến và gu danh mục.
+164: • Endpoint: GET /api/collections/featured• Quyền truy cập: Công khai (Anonymous).• Cache Layer: Candidate Pool gồm 20 BST lưu tại Redis (TTL 30 phút). Chấm điểm Re-rank trên CPU RAM trong 0.05ms.• Rate Limiting: general_api (60 req/phút).
+165: Bảng tham số đầu vào (Query Parameters):
+166: Tham số
+167: Kiểu dữ liệu
+168: Bắt buộc
+169: Giá trị mặc định
+170: Mô tả & Ví dụ
+171: count
+172: int?
+173: Không
+174: 6
+175: Số lượng bộ sưu tập mong muốn lấy về (từ 1 đến 12 BST).
+176: lat
+177: double?
+178: Không
+179: null
+180: Vĩ độ GPS người dùng để tính khoảng cách minDistanceKm đến các địa điểm trong BST.
+181: lng
+182: double?
+183: Không
+184: null
+185: Kinh độ GPS người dùng.
+186: intentProvinceIds
+187: string?
+188: Không
+189: null
+190: Danh sách ID các tỉnh ý định người dùng quan tâm (ví dụ: '32,24').
+191: topCategoryIds
+192: string?
+193: Không
+194: null
+195: Danh sách ID các danh mục người dùng yêu thích (ví dụ: '2,5').
+196: // Mẫu dữ liệu JSON trả về từ GET /api/collections/featured
+197: {
+198:   "success": true,
+199:   "data": [
+200:     {
+201:       "id": 12,
+202:       "title": "Top Quán Cà Phê Không Gian Yên Tĩnh Làm Việc",
+203:       "slug": "top-quan-ca-phe-khong-gian-yen-tinh-lam-viec",
+204:       "description": "Tuyển chọn những góc cà phê yên tĩnh, wifi mạnh và view thoáng tại Sài Gòn.",
+205:       "coverImageUrl": "https://images.unsplash.com/photo-1554118811-1e0d58224f24",
+206:       "isFeatured": true,
+207:       "placesCount": 8,
+208:       "matchReason": "near",
+209:       "matchLabel": "📍 Gần bạn · cách 1.2 km",
+210:       "places": [
+211:         {
+212:           "id": 142,
+213:           "name": "The Workshop Coffee",
+214:           "slug": "the-workshop-coffee",
+215:           "coverImageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb",
+216:           "avgRating": 4.8,
+217:           "reviewCount": 128,
+218:           "provinceName": "Thành phố Hồ Chí Minh",
+219:           "categoryName": "Quán Cà Phê",
+220:           "minPrice": 60000,
+221:           "maxPrice": 120000
+222:         }
+223:       ]
+224:     },
+225:     {
+226:       "id": 18,
+227:       "title": "Thiên Đường Ẩm Thực Biển Nha Trang",
+228:       "slug": "thien-duong-am-thuc-bien-nha-trang",
+229:       "description": "Khám phá các quán hải sản tươi ngon, giá bình dân được lòng dân bản địa.",
+230:       "coverImageUrl": "https://images.unsplash.com/photo-1544551763-46a013bb70d5",
+231:       "isFeatured": true,
+232:       "placesCount": 10,
+233:       "matchReason": "intent",
+234:       "matchLabel": "✈️ Cho chuyến đi Khánh Hòa",
+235:       "places": [
+236:         {
+237:           "id": 204,
+238:           "name": "Hải Sản Bờ Kè Nha Trang",
+239:           "slug": "hai-san-bo-ke-nha-trang",
+240:           "coverImageUrl": "https://images.unsplash.com/photo-1544551763-46a013bb70d5",
+241:           "avgRating": 4.7,
+242:           "reviewCount": 215,
+243:           "provinceName": "Khánh Hòa",
+244:           "categoryName": "Hải Sản",
+245:           "minPrice": 80000,
+246:           "maxPrice": 250000
+247:         }
+248:       ]
+249:     }
+250:   ],
+251:   "message": "Lấy danh sách bộ sưu tập nổi bật thành công",
+252:   "errors": null
+253: }
+254: 4. THUẬT TOÁN CHẤM ĐIỂM & ĐIỀU PHỐI (SCORING ALGORITHMS)
+255: Quy trình tính điểm và lựa chọn địa điểm/bộ sưu tập tối ưu nhất trên từng request:
+256: 4.1. Công thức Chấm điểm Bộ sưu tập (Collection Composite Score)
+257: Mỗi bộ sưu tập trong Candidate Pool 20 BST được chấm điểm chuẩn hóa theo thang 100 điểm:
+258: Thành phần
+259: Trọng số
+260: Công thức & Ý nghĩa
+261: Near (Khoảng cách GPS)
+262: 40%
+263: Near = max(0, 1 - minDistanceKm / 50km). minDistanceKm là khoảng cách Haversine từ GPS người dùng đến địa điểm gần nhất trong BST.
+264: Intent (Điểm đến Ý định)
+265: 35%
+266: Tỷ lệ địa điểm trong BST thuộc tỉnh ý định. Nhân trọng số thứ hạng: Top 1 intent nhân 1.0; Top 2 nhân 0.7; Top 3 nhân 0.5.
+267: Category (Gu Danh mục)
+268: 20%
+269: Tỷ lệ số địa điểm có CategoryId thuộc TopCategoryIds người dùng quan tâm trên tổng số địa điểm trong BST.
+270: Quality (Chất lượng)
+271: 5%
+272: Điểm đánh giá trung bình của các địa điểm trong BST chia cho 5.0.
+273: 4.2. Sắp xếp Địa điểm con bên trong Bộ sưu tập
+274: Bên trong từng bộ sưu tập được chọn, các địa điểm con (PlaceCard) được tự động tái sắp xếp:
+275: 1. Ưu tiên Gu: Địa điểm có CategoryId khớp với gu người dùng quan tâm được đưa lên các vị trí đầu tiên (index 0, 1).
+276: 2. Ưu tiên Chất lượng: Các địa điểm tiếp theo sắp xếp theo AvgRating giảm dần và ReviewCount nhiều nhất.
+277: 5. KIẾN TRÚC LEGO CACHING & HIỆU NĂNG TẢI CAO (REDIS + RAM)
+278: Hệ thống chia nhỏ cache thành 3 khối Lego độc lập tại Redis, kết hợp tính toán re-rank siêu tốc trên CPU RAM:
+279: Khối Lego
+280: Key Pattern Redis
+281: TTL
+282: Nhiệm vụ & Cơ chế
+283: Lego 1: Bounding Box Địa điểm
+284: cache:nearby:{gridKey}
+285: 15 phút
+286: Chứa toàn bộ địa điểm trong ô lưới ~1.1km. Toàn bộ người dùng trong cùng ô lưới dùng chung key này. Cache Hit Rate > 90%.
+287: Lego 2: Top Places theo Tỉnh
+288: cache:top_places:province_{provId}
+289: 30 phút
+290: Chứa top địa điểm nổi bật nhất theo từng tỉnh. Rất nhẹ, dùng chung cho mọi truy vấn Kệ 2.
+291: Lego 3: Candidate Pool Collections
+292: catalog:collections:featured:pool:v3:20
+293: 30 phút
+294: 1 key duy nhất chứa 20 BST đầy đủ tọa độ/danh mục thật. Tránh truy vấn lặp SQL Server.
+295: 📌 ĐÁNH GIÁ CHỈ SỐ KỸ THUẬT (BENCHMARK)
+296: • SQL Server: Giảm hơn 95% số lượng câu query nặng; chỉ truy vấn khi cache miss.
+297: • Redis: Tiết kiệm RAM gấp hàng trăm lần so với cách cache theo từng User ID.
+298: • Latency: Thời gian phản hồi trung bình đo đạc thực tế chỉ 10ms – 25ms dưới tải lớn.
+299: 6. QUY TRÌNH XỬ LÝ DỮ LIỆU ĐẦU CUỐI (END-TO-END DATA FLOW)
+300: Bước 1 (Frontend): Người dùng tương tác (tìm kiếm, click địa điểm, chọn tab). utils/deviceContext.ts ghi nhận, cập nhật localStorage và phát CustomEvent 'langthang:intent_changed'.Bước 2 (Frontend -> Backend): Component HomePage gọi đồng thời 2 API song song: GET /api/recommendations/home-feed và GET /api/collections/featured kèm tham số GPS đã snap và intentIds.Bước 3 (Backend Lego Caching): Backend kiểm tra Redis. Nếu có cache, đọc ngay các khối Lego trong < 1ms. Nếu miss, Dapper truy vấn SQL Server (tận dụng Spatial Index) và nạp lại cache.Bước 4 (In-Memory Re-rank): RecommendationService và GetFeaturedCollectionsQuery tính khoảng cách Haversine chính xác, cộng Category Bonus, tính CollectionScore trên RAM (0.05ms) và sắp xếp kết quả.Bước 5 (Frontend Render): React render mượt mà các Kệ địa điểm và Bộ sưu tập với tiêu đề trực tiếp, tinh gọn và tốc độ hiển thị tức thì.
+301: 7. ĐẶC TẢ KỸ THUẬT & API HÌNH ẢNH DANH THẮNG VÙNG MIỀN VÀ TỈNH THÀNH (GEOGRAPHY PHOTOS API)
+302: 7.1. Bối cảnh & Chiến lược Kiến trúc 2 tầng (Two-Tier Media Architecture)
+303: Trong trang chi tiết Vùng miền (Miền Bắc: 247 địa điểm, 1.233 bức ảnh) và trang Tỉnh thành (TP Hà Nội: 58 địa điểm, 287 bức ảnh):• Trước đây: Miền Bắc chỉ ra 5 ảnh (lấy cố định TOP 4 ảnh đại diện tỉnh); Hà Nội chỉ ra 1 ảnh (do SQL LEFT JOIN PlaceMedia thiếu nhóm, trả về 5 dòng cùng một địa điểm rồi bị C# deduplicate).• Chiến lược giải quyết chuẩn Doanh nghiệp: Hệ thống KHÔNG tách riêng API cho Banner Hero Carousel (nhằm tránh Request Waterfall, hiện khung trống và giật bố cục Layout Shift). Thay vào đó, hệ thống cung cấp kiến trúc 2 tầng:
+304: Tầng kiến trúc
+305: Phương thức & Mục đích
+306: Ưu điểm kỹ thuật
+307: Tầng 1:Above-The-Fold(Hero Carousel)
+308: Tích hợp trong API Landing (/landing)Trả về 12–13 ảnh phong cảnh tiêu biểu nhất, chọn lọc từ các danh lam hàng đầu.
+309: • 0 lượt gọi mạng thừa (Zero Waterfall).• Không bị giật bố cục (0 Cumulative Layout Shift).• Được cache sẵn trong Redis (< 15ms phản hồi).
+310: Tầng 2:Deep-Browse(Thư viện / Album)
+311: Tách riêng API chuyên biệt có phân trang:/api/regions/{slug}/photos/api/provinces/{idOrSlug}/photos(Hỗ trợ page, pageSize)
+312: • Đáp ứng nhu cầu duyệt 1.233 ảnh Miền Bắc hoặc 287 ảnh Hà Nội.• Tải phân trang mượt mà (Lazy load / Infinite scroll).• Giữ tải trọng Landing API cực nhẹ.
+313: 7.2. Endpoint 1: GET /api/regions/{regionSlug}/photos (Hình ảnh Vùng miền Phân trang)
+314: • Phương thức: GET /api/regions/{regionSlug}/photos• Phân quyền: Public (AllowAnonymous). Giới hạn tốc độ: general_api rate limiter.• Mục đích: Cung cấp danh sách hình ảnh phong cảnh, danh thắng của toàn vùng miền có hỗ trợ phân trang (page, pageSize), phục vụ hiển thị thư viện ảnh hoặc Infinite Scroll.
+315: Bảng thông số đầu vào (Request Parameters):
+316: Tên tham số
+317: Vị trí
+318: Kiểu dữ liệu
+319: Bắt buộc
+320: Mô tả & Ràng buộc
+321: regionSlug
+322: Route (Path)
+323: String
+324: Có
+325: Mã hoặc slug vùng: mien-bac (north), mien-trung (central), mien-nam (south).
+326: page
+327: Query
+328: Integer
+329: Không
+330: Chỉ số trang, mặc định = 1 (tự động điều chỉnh >= 1 nếu truyền số âm).
+331: pageSize
+332: Query
+333: Integer
+334: Không
+335: Số ảnh mỗi trang, mặc định = 20, giới hạn tối đa 50 để chống nghẽn mạng.
+336: Mẫu Response JSON Thành công (HTTP 200 OK):
+337: {  "success": true,  "message": "Lấy danh sách hình ảnh vùng miền thành công",  "data": {    "items": [      {        "url": "https://booking.muongthanh.com/upload_images/images/sun-world-ha-long.jpg",        "title": "Sun World Halong Complex",        "location": "Tỉnh Quảng Ninh",        "tag": "Khu vui chơi giải trí"      },      {        "url": "https://flamingoresortbooking.com/wp-content/uploads/biet-thu-flamingo-dai-lai.jpg",        "title": "Flamingo Đại Lải Resort Villa Vĩnh Phúc",        "location": "Tỉnh Vĩnh Phúc",        "tag": "Villa & Hostel"      },      {        "url": "https://halotravel.vn/wp-content/uploads/2020/08/ban-lim-mong.jpg",        "title": "Bản Lìm Mông",        "location": "Tỉnh Lào Cai",        "tag": "Danh lam thắng cảnh"      }    ],    "totalCount": 1233,    "pageIndex": 1,    "pageSize": 5,    "totalPages": 247,    "hasPreviousPage": false,    "hasNextPage": true  },  "errors": []}
+338: 7.3. Endpoint 2: GET /api/provinces/{idOrSlug}/photos (Hình ảnh Tỉnh thành Phân trang)
+339: • Phương thức: GET /api/provinces/{idOrSlug}/photos• Phân quyền: Public (AllowAnonymous). Giới hạn tốc độ: general_api rate limiter.• Mục đích: Cung cấp danh sách hình ảnh phong cảnh, ẩm thực, văn hóa của riêng một tỉnh thành có hỗ trợ phân trang.
+340: Bảng thông số đầu vào (Request Parameters):
+341: Tên tham số
+342: Vị trí
+343: Kiểu dữ liệu
+344: Bắt buộc
+345: Mô tả & Ràng buộc
+346: idOrSlug
+347: Route (Path)
+348: String
+349: Có
+350: ID số (ví dụ: '1') hoặc slug tỉnh thành ('tp-ha-noi', 'ha-noi').
+351: page
+352: Query
+353: Integer
+354: Không
+355: Chỉ số trang, mặc định = 1.
+356: pageSize
+357: Query
+358: Integer
+359: Không
+360: Số ảnh mỗi trang, mặc định = 20, tối đa 50.
+361: Mẫu Response JSON Thành công (HTTP 200 OK):
+362: {  "success": true,  "message": "Lấy danh sách hình ảnh tỉnh thành thành công",  "data": {    "items": [      {        "url": "http://centralbackpackershostel.com/upimages/files/CentralBackpackers5.jpg",        "title": "Hanoi Central Backpackers Hostel",        "location": "TP Hà Nội",        "tag": "Villa & Hostel"      },      {        "url": "https://mia.vn/media/uploads/blog-du-lich/o-mai-hang-duong-hong-lam-1702488108.jpg",        "title": "Cửa Hàng Ô Mai Gia Truyền Hồng Lam Hàng Đường",        "location": "TP Hà Nội",        "tag": "Đặc sản & Quà lưu niệm"      },      {        "url": "https://media.vietravel.com/images/Content/khu-vui-choi-ha-noi-4.png",        "title": "Công Viên Thiên Đường Bảo Sơn",        "location": "TP Hà Nội",        "tag": "Khu vui chơi giải trí"      }    ],    "totalCount": 287,    "pageIndex": 1,    "pageSize": 5,    "totalPages": 58,    "hasPreviousPage": false,    "hasNextPage": true  },  "errors": []}
+363: 7.4. Nâng cấp Dữ liệu Hero trong Landing API
+364: 1. GET /api/regions/{regionSlug}/landing:• Trường data.heroImages trước đây chỉ trả 5 ảnh (chủ yếu là ảnh đại diện 4 tỉnh).• Hiện tại: Tự động tổng hợp 1 ảnh đại diện vùng + 12 ảnh danh lam thắng cảnh xếp hạng cao nhất từ các tỉnh thành thuộc vùng (Lai Châu, Ninh Bình, Sơn La, Quảng Ninh, Thái Nguyên, Lạng Sơn, Phú Thọ, Bắc Ninh, Cao Bằng, Tuyên Quang,...).• Bộ đệm Redis: Đã nâng cấp key lên geography:regions:landing:v4:{code} với TTL 1 giờ. Phản hồi trung bình: 10–30ms.
+365: 2. GET /api/provinces/{idOrSlug}/landing:• Trường data.heroImages trước đây chỉ trả 1 ảnh do lỗi trùng địa điểm.• Hiện tại: Trả về 13 ảnh đa dạng danh lam tiêu biểu của tỉnh (Tháp Rùa, Hồ Gươm, Lăng Bác, Cầu Long Biên, Phố Cổ, Hỏa Lò, Hồ Tây, Làng cổ,...). Mỗi địa danh lấy tối đa 1 ảnh đẹp nhất; nếu tỉnh có ít địa điểm, hệ thống tự động bổ sung ảnh phụ từ media của các địa danh đó để luôn đảm bảo đủ từ 6–12 ảnh.• Bộ đệm Redis: Đã nâng cấp key lên geography:provinces:landing:v8:{idOrSlug} với TTL 5 phút. Phản hồi trung bình: 9–15ms.
+366: 7.5. Đặc tả Cấu trúc Dữ liệu Đầu ra (RegionHeroImageDto & PagedResult<T>)
+367: Bảng đặc tả các trường thuộc tính của RegionHeroImageDto:
+368: Thuộc tính
+369: Kiểu dữ liệu
+370: Giá trị rỗng
+371: Ý nghĩa hiển thị Frontend
+372: url
+373: String
+374: Không (Not Null)
+375: Đường dẫn URL hình ảnh chất lượng cao (CDN, Cloud Storage hoặc ảnh trực tiếp từ media).
+376: title
+377: String
+378: Có
+379: Tên địa danh / di tích / cảnh quan tương ứng (dùng hiển thị badge tên ở góc ảnh).
+380: location
+381: String
+382: Có
+383: Tên tỉnh thành hoặc địa bàn sở tại (ví dụ: 'Tỉnh Lào Cai', 'TP Hà Nội').
+384: tag
+385: String
+386: Có
+387: Nhãn thể loại: 'Danh lam thắng cảnh', 'Di tích & Tâm linh', 'Đặc sản ẩm thực',...
+388: Bảng đặc tả metadata phân trang PagedResult<T>:
+389: Thuộc tính
+390: Kiểu dữ liệu
+391: Mô tả chi tiết
+392: items
+393: List<T>
+394: Danh sách các bản ghi hình ảnh thuộc trang hiện tại.
+395: totalCount
+396: Long
+397: Tổng số lượng hình ảnh thỏa mãn điều kiện trong toàn bộ cơ sở dữ liệu.
+398: pageIndex
+399: Integer
+400: Chỉ số trang hiện tại (bắt đầu từ 1).
+401: pageSize
+402: Integer
+403: Số lượng bản ghi tối đa trên một trang.
+404: totalPages
+405: Integer
+406: Tổng số trang = Ceiling(totalCount / pageSize).
+407: hasPreviousPage
+408: Boolean
+409: True nếu pageIndex > 1 (có trang trước để tải lùi).
+410: hasNextPage
+411: Boolean
+412: True nếu pageIndex < totalPages (còn dữ liệu để tải tiếp trong Infinite Scroll).
+413: 7.6. Tối ưu SQL Window Function & Redis Cache
+414: Truy vấn SQL sử dụng Window Function ROW_NUMBER() để đảm bảo phân bổ đều danh lam thắng cảnh giữa các tỉnh và địa danh, tránh nghẽn I/O DB:
+415: WITH RankedPhotos AS (    SELECT         COALESCE(pm.Url, pl.CoverImageUrl) AS Url,        pl.Name AS Title,        prov.Name AS Location,        ISNULL(cat.Name, N'Danh lam thắng cảnh') AS Tag,        ROW_NUMBER() OVER (            PARTITION BY prov.Id             ORDER BY pl.AvgRating DESC, pl.ReviewCount DESC, pm.DisplayOrder ASC        ) AS ProvRank,        ROW_NUMBER() OVER (            PARTITION BY pl.Id             ORDER BY pm.DisplayOrder ASC, pm.Id ASC        ) AS PlacePhotoRank    FROM dbo.Places pl    INNER JOIN dbo.Provinces prov ON pl.ProvinceId = prov.Id    INNER JOIN dbo.PlaceMedia pm ON pm.PlaceId = pl.Id    LEFT JOIN dbo.Categories cat ON pl.CategoryId = cat.Id    WHERE prov.RegionId = @RegionId       AND pl.Status = 1 AND pl.IsDeleted = 0 AND prov.Status = 1      AND pm.Url IS NOT NULL AND pm.Url != ''      AND (pm.MediaType = 1 OR pm.MediaType IS NULL))SELECT TOP 12 Url, Title, Location, TagFROM RankedPhotosWHERE PlacePhotoRank = 1ORDER BY ProvRank ASC, Title ASC;
+416: 7.7. Hướng dẫn Tích hợp Frontend & Dịch vụ geographyService
+417: Tại src/services/geographyService.ts, hai hàm API phân trang được khai báo chuẩn TypeScript:
+418: import { geographyService } from '@/services/geographyService'// 1. Gọi API lấy ảnh phân trang Vùng miềnconst loadRegionGallery = async (slug: string, page = 1) => {  const res = await geographyService.getRegionPhotos(slug, page, 20)  if (res.success && res.data) {    console.log(`Đã tải ${res.data.items.length}/${res.data.totalCount} ảnh`)    return res.data  }}// 2. Gọi API lấy ảnh phân trang Tỉnh thànhconst loadProvinceGallery = async (idOrSlug: string, page = 1) => {  const res = await geographyService.getProvincePhotos(idOrSlug, page, 20)  if (res.success && res.data) {    console.log(`Đã tải ${res.data.items.length}/${res.data.totalCount} ảnh`)    return res.data  }}

@@ -27,7 +27,6 @@ class ItineraryDetailScreen extends StatefulWidget {
 
 class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
   late ItineraryModel _itinerary;
-  late bool _isSaved;
   bool _isPublished = false;
   bool _hasUnsavedChanges = false;
   bool _isSaving = false;
@@ -59,7 +58,6 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
   void initState() {
     super.initState();
     _itinerary = widget.itinerary;
-    _isSaved = widget.initialIsSaved || _itinerary.isSaved;
     _isPublished = _itinerary.style.contains('Công khai') || _itinerary.id < 100000;
     // Default open all days
     for (int i = 0; i < _itinerary.days.length; i++) {
@@ -1316,41 +1314,6 @@ class _ItineraryDetailScreenState extends State<ItineraryDetailScreen> {
                           ],
                         ),
                       ),
-
-                      // Bookmark button (Favorite targetType 3)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        constraints: const BoxConstraints(),
-                        tooltip: _isSaved ? 'Đã lưu vào bộ sưu tập' : 'Lưu vào bộ sưu tập',
-                        icon: Icon(
-                          _isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                          color: _isSaved ? const Color(0xFFE11D48) : const Color(0xFF94A3B8),
-                          size: 19,
-                        ),
-                        onPressed: () async {
-                          final nextSaved = !_isSaved;
-                          setState(() {
-                            _isSaved = nextSaved;
-                            _itinerary = _itinerary.copyWith(isSaved: nextSaved);
-                          });
-                          await TravelApiService().saveItinerary(_itinerary.id, itinerary: _itinerary, isSaving: nextSaved);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  nextSaved ? 'Đã lưu lịch trình vào bộ sưu tập cá nhân!' : 'Đã bỏ lưu lịch trình.',
-                                ),
-                                backgroundColor: nextSaved ? const Color(0xFF065F46) : const Color(0xFF334155),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                duration: const Duration(seconds: 2),
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 4),
 
                       // Members Chip (Share_Locations Member Modal)
                       InkWell(

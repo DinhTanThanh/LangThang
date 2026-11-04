@@ -8,14 +8,11 @@ import '../../../data/services/auth_service.dart';
 import '../../../data/services/user_profile_api_service.dart';
 import '../../../data/services/place_api_service.dart';
 import '../profile/favorites_section_widget.dart';
+import '../profile/user_trips_section_widget.dart';
 import '../profile/visited_log_section_widget.dart';
 import '../profile/friends_section_widget.dart';
 import '../profile/user_proposals_section_widget.dart';
 import '../../screens/destinations/place_detail_screen.dart';
-import '../../screens/itineraries/itineraries_screen.dart';
-import '../../screens/itineraries/itinerary_detail_screen.dart';
-import '../../../data/services/itinerary_api_service.dart';
-import '../../../data/models/itinerary_model.dart';
 import '../../screens/auth/login_screen.dart';
 import '../../screens/blog/blog_editor_screen.dart';
 import '../../screens/blog/blog_detail_screen.dart';
@@ -86,7 +83,6 @@ class _UserUtilityDrawerModalState extends State<UserUtilityDrawerModal> {
   List<UserCommentItemModel> _comments = [];
   List<UserBlogItemModel> _blogs = [];
   List<ProposalItemModel> _proposals = [];
-  List<ItineraryModel> _itineraries = [];
   int? _reviewRatingFilter;
   int? _blogStatusFilter; // null = all, 1 = published, 2 = pending, 0 = draft
   bool _isLoadingUtilityData = false;
@@ -171,11 +167,6 @@ class _UserUtilityDrawerModalState extends State<UserUtilityDrawerModal> {
         if (res.success && res.data != null && mounted) {
           setState(() => _proposals = res.data!);
         }
-      } else if (type == UtilityType.trips) {
-        final list = await ItineraryApiService().getItineraries();
-        if (mounted) {
-          setState(() => _itineraries = list);
-        }
       }
     } catch (_) {}
 
@@ -185,19 +176,6 @@ class _UserUtilityDrawerModalState extends State<UserUtilityDrawerModal> {
   }
 
   void _selectUtility(UtilityType type) {
-    if (type == UtilityType.trips) {
-      Navigator.pop(context);
-      if (widget.onNavigateTab != null) {
-        widget.onNavigateTab!(3); // Tab 3 is Itineraries / Trips
-      } else {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const ItinerariesScreen()),
-        );
-      }
-      return;
-    }
-
     setState(() {
       _activeUtility = type;
     });
@@ -369,8 +347,8 @@ class _UserUtilityDrawerModalState extends State<UserUtilityDrawerModal> {
       },
       {
         'type': UtilityType.trips,
-        'title': 'Chuyến đi',
-        'subtitle': 'Lịch trình du lịch, điểm đến & hoạt động',
+        'title': 'Hành trình',
+        'subtitle': 'Lịch trình du lịch do bản thân tạo ra',
         'icon': Icons.alt_route_rounded,
       },
       {
@@ -722,7 +700,7 @@ class _UserUtilityDrawerModalState extends State<UserUtilityDrawerModal> {
       case UtilityType.favorites:
         return 'Địa điểm yêu thích';
       case UtilityType.trips:
-        return 'Lịch trình chuyến đi';
+        return 'Hành trình của tôi';
       case UtilityType.visitLogs:
         return 'Nhật ký hành trình';
       case UtilityType.friends:
@@ -804,149 +782,12 @@ class _UserUtilityDrawerModalState extends State<UserUtilityDrawerModal> {
         );
 
       case UtilityType.trips:
-        return _buildTripsUtilityView();
-    }
-  }
-
-  // Sub-view for Trips / Itineraries
-  Widget _buildTripsUtilityView() {
-    if (_itineraries.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFDBEAFE),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.alt_route_rounded, color: Color(0xFF1E40AF), size: 30),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'Lịch trình chuyến đi',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Khám phá các lịch trình mẫu hoặc tạo kế hoạch du lịch chi tiết cho chuyến đi tiếp theo của bạn.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
-              ),
-              const SizedBox(height: 18),
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.pop(context);
-                  if (widget.onNavigateTab != null) {
-                    widget.onNavigateTab!(3);
-                  } else {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const ItinerariesScreen()),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                icon: const Icon(Icons.explore_rounded, size: 18),
-                label: const Text('Khám phá lịch trình', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _itineraries.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final it = _itineraries[index];
-        return InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => ItineraryDetailScreen(
-                  itinerary: it,
-                ),
-              ),
-            );
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (it.coverUrl != null && it.coverUrl!.isNotEmpty)
-                  SizedBox(
-                    height: 120,
-                    width: double.infinity,
-                    child: buildAppImage(it.coverUrl, fit: BoxFit.cover),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF6FF),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              it.duration,
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1D4ED8)),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            it.destination,
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        it.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+        return UserTripsSectionWidget(
+          isDrawer: true,
+          onClose: () => Navigator.pop(context),
+          onToast: _showToast,
         );
-      },
-    );
+    }
   }
 
   // Sub-views for Reviews

@@ -963,6 +963,54 @@ class UserProfileApiService {
     return const ApiResponse<List<UserCommentItemModel>>(success: true, message: 'OK', data: []);
   }
 
+  /// Lấy danh sách chuyến đi của chính tài khoản hiện tại (/api/users/me/trips)
+  Future<ApiResponse<List<UserTripItemModel>>> getMyTrips({int page = 1, int pageSize = 50}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/me/trips',
+        '/api/v1/users/me/trips',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserTripItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserTripItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+
+      // Fallback: nếu /me không trả về, thử query qua ID của user hiện tại
+      final currentUser = await AuthService().getCachedUser();
+      if (currentUser != null && currentUser.id.isNotEmpty) {
+        final intId = int.tryParse(currentUser.id);
+        if (intId != null && intId > 0) {
+          return await getUserTrips(intId, page: page, pageSize: pageSize);
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getMyTrips error: $e');
+    }
+    return const ApiResponse<List<UserTripItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Xóa chuyến đi của người dùng (/api/trips/{id})
+  Future<bool> deleteTrip(int tripId) async {
+    try {
+      final response = await _deleteWithFallback(
+        '/api/trips/$tripId',
+        '/api/v1/trips/$tripId',
+      );
+      return response != null && response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint('[UserProfileApiService] deleteTrip error: $e');
+      return false;
+    }
+  }
+
   /// Lấy danh sách chuyến đi thật của người dùng
   Future<ApiResponse<List<UserTripItemModel>>> getUserTrips(int userId, {int page = 1, int pageSize = 30}) async {
     try {
@@ -1061,6 +1109,30 @@ class UserProfileApiService {
       debugPrint('[UserProfileApiService] getUserProposals error: $e');
     }
     return const ApiResponse<List<ProposalItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Lấy danh sách điểm bản đồ dấu chân du lịch (Reviews + VisitLogs + Proposals)
+  Future<ApiResponse<List<UserMapPlaceModel>>> getUserMapPlaces(int userId) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/map-places',
+        '/api/v1/users/$userId/map-places',
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserMapPlaceModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserMapPlaceModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserMapPlaces error: $e');
+    }
+    return const ApiResponse<List<UserMapPlaceModel>>(success: true, message: 'OK', data: []);
   }
 }
 

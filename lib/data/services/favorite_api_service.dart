@@ -302,7 +302,6 @@ class FavoriteApiService {
       FavoriteTargetType.all: list.length,
       FavoriteTargetType.place: list.where((f) => f.targetType == 1).length,
       FavoriteTargetType.food: list.where((f) => f.targetType == 2).length,
-      FavoriteTargetType.itinerary: list.where((f) => f.targetType == 3).length,
       FavoriteTargetType.blog: list.where((f) => f.targetType == 4).length,
     };
   }

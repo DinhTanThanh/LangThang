@@ -5,7 +5,6 @@ enum FavoriteTargetType {
   all(0, 'Tất cả', Icons.apps_rounded),
   place(1, 'Địa điểm', Icons.location_on_rounded),
   food(2, 'Ẩm thực', Icons.restaurant_rounded),
-  itinerary(3, 'Hành trình', Icons.explore_rounded),
   blog(4, 'Bài viết', Icons.menu_book_rounded);
 
   final int value;
@@ -20,8 +19,6 @@ enum FavoriteTargetType {
         return FavoriteTargetType.place;
       case 2:
         return FavoriteTargetType.food;
-      case 3:
-        return FavoriteTargetType.itinerary;
       case 4:
         return FavoriteTargetType.blog;
       default:

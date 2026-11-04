@@ -31,16 +31,16 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
 
   String _selectedDuration = 'all'; // 'all', '1', '2', '3', '4', '5'
   String _selectedBudget = 'all'; // 'all', 'under1m', '1m-3m', '3m-5m', 'above5m'
+  String _selectedDestination = 'all'; // 'all' or province name
   final Set<int> _appliedItineraryIds = {};
-  final Map<int, bool> _savedStatus = {};
 
   final List<Map<String, String>> _durations = const [
     {'id': 'all', 'label': 'Tất cả thời lượng'},
     {'id': '1', 'label': '1 Ngày'},
-    {'id': '2', 'label': '2N1Đ'},
-    {'id': '3', 'label': '3N2Đ'},
-    {'id': '4', 'label': '4N3Đ'},
-    {'id': '5', 'label': '5N+'},
+    {'id': '2', 'label': '2 Ngày 1 Đêm (2N1Đ)'},
+    {'id': '3', 'label': '3 Ngày 2 Đêm (3N2Đ)'},
+    {'id': '4', 'label': '4 Ngày 3 Đêm (4N3Đ)'},
+    {'id': '5', 'label': '5 Ngày trở lên (5N+)'},
   ];
 
   final List<Map<String, String>> _budgets = const [
@@ -54,7 +54,35 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
   bool get _hasActiveFilters =>
       _selectedDuration != 'all' ||
       _selectedBudget != 'all' ||
+      _selectedDestination != 'all' ||
       _searchController.text.trim().isNotEmpty;
+
+  List<String> get _destinationList {
+    final set = <String>{};
+    final standard = [
+      'Tỉnh Bắc Ninh', 'Tỉnh Cà Mau', 'Tỉnh An Giang',
+      'Tỉnh Đắk Lắk', 'Tỉnh Điện Biên', 'Tỉnh Cao Bằng',
+      'Tỉnh Đồng Tháp', 'Tỉnh Gia Lai', 'Tỉnh Đồng Nai',
+      'Tỉnh Hưng Yên', 'Tỉnh Khánh Hòa', 'Tỉnh Hà Tĩnh',
+      'Tỉnh Lạng Sơn', 'Tỉnh Lào Cai', 'Tỉnh Lai Châu',
+      'Tỉnh Nghệ An', 'Tỉnh Ninh Bình', 'Tỉnh Lâm Đồng',
+      'Tỉnh Quảng Ngãi', 'Tỉnh Quảng Ninh', 'Tỉnh Phú Thọ',
+      'Tỉnh Sơn La', 'Tỉnh Tây Ninh', 'Tỉnh Quảng Trị',
+      'Tỉnh Thanh Hóa', 'Tỉnh Tuyên Quang', 'Tỉnh Thái Nguyên',
+      'Tỉnh Vĩnh Long', 'Đà Nẵng', 'Hà Nội',
+      'TP. Hồ Chí Minh', 'Thừa Thiên Huế', 'Quảng Nam',
+      'Kiên Giang', 'Bình Thuận'
+    ];
+    for (final p in standard) {
+      set.add(p);
+    }
+    for (final it in _allItineraries) {
+      if (it.destination.isNotEmpty) set.add(it.destination);
+    }
+    final list = set.toList();
+    list.sort((a, b) => a.compareTo(b));
+    return list;
+  }
 
   @override
   void initState() {
@@ -114,12 +142,20 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
     setState(() {
       _selectedDuration = 'all';
       _selectedBudget = 'all';
+      _selectedDestination = 'all';
       _searchController.clear();
     });
   }
 
   List<ItineraryModel> get _filteredItineraries {
     return _allItineraries.where((item) {
+      // Filter by Destination
+      if (_selectedDestination != 'all') {
+        final dest = item.destination.toLowerCase();
+        final clean = _selectedDestination.toLowerCase().replaceAll('tỉnh ', '').replaceAll('thành phố ', '').replaceAll('tp. ', '').trim();
+        if (!dest.contains(clean)) return false;
+      }
+
       // Filter by Duration
       if (_selectedDuration != 'all') {
         final d = item.daysCount;
@@ -207,39 +243,6 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
       return refreshedToken != null && refreshedToken.isNotEmpty;
     }
     return false;
-  }
-
-  Future<void> _handleSaveItinerary(int id) async {
-    final isAuthed = await _ensureAuthenticated('lưu lịch trình yêu thích');
-    if (!isAuthed) return;
-
-    final isAlreadySaved = _savedStatus[id] ?? false;
-    final willSave = !isAlreadySaved;
-    setState(() {
-      _savedStatus[id] = willSave;
-    });
-
-    ItineraryModel? foundItem;
-    try {
-      foundItem = _allItineraries.firstWhere((item) => item.id == id);
-    } catch (_) {}
-
-    await _apiService.saveItinerary(id, itinerary: foundItem, isSaving: willSave);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            willSave ? 'Đã lưu lịch trình vào bộ sưu tập cá nhân!' : 'Đã bỏ lưu lịch trình.',
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          backgroundColor: willSave ? const Color(0xFF047857) : const Color(0xFF374151),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
   }
 
   Future<void> _handleApplyItinerary(ItineraryModel itinerary) async {
@@ -348,6 +351,20 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
                 style: TextStyle(color: Color(0xFF0F172A), fontSize: 16.5, fontWeight: FontWeight.w800),
               ),
               centerTitle: true,
+              actions: [
+                TextButton.icon(
+                  onPressed: _handleCreateNewTrip,
+                  icon: const Icon(Icons.add_rounded, size: 16, color: Color(0xFF047857)),
+                  label: const Text(
+                    'Tạo chuyến đi',
+                    style: TextStyle(
+                      color: Color(0xFF047857),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
               bottom: PreferredSize(
                 preferredSize: const Size.fromHeight(1),
                 child: Container(color: const Color(0xFFE2E8F0), height: 1),
@@ -366,173 +383,8 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Hero Banner Section (Matching Share_Locations ItineraryPage.tsx)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFF064E3B), Color(0xFF065F46)],
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    // Pill Badge
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF047857).withValues(alpha: 0.8),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.explore_rounded, color: Color(0xFF6EE7B7), size: 13),
-                          SizedBox(width: 5),
-                          Text(
-                            'KẾ HOẠCH DU LỊCH TỰ TÚC',
-                            style: TextStyle(
-                              color: Color(0xFF6EE7B7),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Main Heading
-                    const Text(
-                      'Lịch Trình Khám Phá Việt Nam Từng Bước',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.3,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Subtitle
-                    const Text(
-                      'Các lộ trình du lịch tối ưu hóa thời gian và chi phí, kèm điểm ăn chơi, phương tiện và mẹo hữu ích cho từng ngày.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Color(0xFFD1FAE5),
-                        fontSize: 12,
-                        height: 1.45,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Search Box (Matching Share_Locations /itinerary)
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              onChanged: _onSearchChanged,
-                              decoration: InputDecoration(
-                                hintText: 'Tìm kiếm lịch trình, địa điểm, trải nghiệm...',
-                                hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
-                                prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF94A3B8), size: 20),
-                                suffixIcon: _searchController.text.isNotEmpty
-                                    ? IconButton(
-                                        icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF94A3B8)),
-                                        onPressed: () {
-                                          _searchController.clear();
-                                          setState(() {});
-                                        },
-                                      )
-                                    : null,
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(5),
-                            child: InkWell(
-                              onTap: () => setState(() {}),
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF064E3B),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(Icons.search_rounded, color: Colors.white, size: 15),
-                                    SizedBox(width: 5),
-                                    Text(
-                                      'Tìm kiếm',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    // Create New Trip Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _handleCreateNewTrip,
-                        icon: const Icon(Icons.add_rounded, size: 18, color: Colors.white),
-                        label: const Text(
-                          'Tạo chuyến đi mới',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF047857),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(
-                              color: const Color(0xFF34D399).withValues(alpha: 0.4),
-                              width: 1.2,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Redesigned Hero Filter Card (Matching Share_Locations Screenshot)
+              _buildHeroFilterCard(),
 
               if (_isLoading)
                 const Padding(
@@ -542,185 +394,6 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
                   ),
                 )
               else ...[
-                // Multi-dimensional Filter Bar Container (Matching Share_Locations ItineraryCatalogView)
-                Container(
-                  margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.02),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Filter Header & Reset button
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: const [
-                              Icon(Icons.tune_rounded, size: 15, color: Color(0xFF065F46)),
-                              SizedBox(width: 6),
-                              Text(
-                                'Bộ lọc chuyến đi',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF334155),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_hasActiveFilters)
-                            InkWell(
-                              onTap: _resetFilters,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFF1F2),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFFFECDD3)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(Icons.restart_alt_rounded, size: 13, color: Color(0xFFE11D48)),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'Đặt lại',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFFE11D48),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Duration & Budget Options Row
-                      // Duration Row
-                      Row(
-                        children: const [
-                          Icon(Icons.schedule_rounded, size: 13, color: Color(0xFF065F46)),
-                          SizedBox(width: 5),
-                          Text(
-                            'Thời lượng chuyến đi:',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF334155),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: _durations.map((dur) {
-                            final isSelected = _selectedDuration == dur['id'];
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() => _selectedDuration = dur['id']!);
-                                },
-                                borderRadius: BorderRadius.circular(10),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? const Color(0xFF065F46) : Colors.white,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: isSelected ? const Color(0xFF065F46) : const Color(0xFFE2E8F0),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    dur['label']!,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                      color: isSelected ? Colors.white : const Color(0xFF475569),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      // Budget Row
-                      Row(
-                        children: const [
-                          Icon(Icons.payments_outlined, size: 13, color: Color(0xFF065F46)),
-                          SizedBox(width: 5),
-                          Text(
-                            'Giá tiền ước tính:',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF334155),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: _budgets.map((bg) {
-                            final isSelected = _selectedBudget == bg['id'];
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() => _selectedBudget = bg['id']!);
-                                },
-                                borderRadius: BorderRadius.circular(10),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? const Color(0xFF065F46) : Colors.white,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: isSelected ? const Color(0xFF065F46) : const Color(0xFFE2E8F0),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    bg['label']!,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                      color: isSelected ? Colors.white : const Color(0xFF475569),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
                 // Results Counter & Header
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -812,15 +485,12 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
                           separatorBuilder: (context, index) => const SizedBox(height: 14),
                           itemBuilder: (context, index) {
                             final item = filteredList[index];
-                            final isSaved = _savedStatus[item.id] ?? item.isSaved;
 
                             return ItineraryCatalogCard(
                               itinerary: item,
-                              isSaved: isSaved,
                               isApplied: _appliedItineraryIds.contains(item.id),
                               onQuickPreview: () => _openQuickPreview(item),
                               onOpenDetail: () => _handleApplyItinerary(item),
-                              onToggleSave: (id) => _handleSaveItinerary(id),
                             );
                           },
                         ),
@@ -832,6 +502,260 @@ class _ItinerariesScreenState extends State<ItinerariesScreen> {
           ),
         ),
       ),
+      ),
+    );
+  }
+
+  Widget _buildHeroFilterCard() {
+    final destinations = _destinationList;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Title
+          const Text(
+            'Lịch trình sẵn sàng.',
+            style: TextStyle(
+              fontSize: 23,
+              fontWeight: FontWeight.w900,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Description 1
+          const Text(
+            'Tham khảo kế hoạch chuyến đi chi tiết theo từng ngày, cung đường và dự toán ngân sách từ cộng đồng.',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Color(0xFF475569),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // Description 2
+          const Text(
+            'Áp dụng ngay lộ trình yêu thích hoặc tùy chỉnh điểm dừng để tạo nên hành trình mang đậm dấu ấn cá nhân.',
+            style: TextStyle(
+              fontSize: 11.5,
+              color: Color(0xFF64748B),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Search Box with "Tìm" button
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    onSubmitted: (_) => setState(() {}),
+                    style: const TextStyle(fontSize: 12.5, color: Color(0xFF0F172A)),
+                    decoration: const InputDecoration(
+                      hintText: 'Tìm kiếm lịch trình, địa điểm, từ khóa',
+                      hintStyle: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      prefixIcon: Icon(Icons.search_rounded, color: Color(0xFF94A3B8), size: 18),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 5),
+                  child: ElevatedButton(
+                    onPressed: () => setState(() {}),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF047857),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                    ),
+                    child: const Text('Tìm', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+          const Divider(color: Color(0xFFF1F5F9), height: 1),
+          const SizedBox(height: 16),
+
+          // Destination Header: "Điểm đến" + "35 tỉnh thành"
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Điểm đến',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              ),
+              Text(
+                '${destinations.length} tỉnh thành',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Destination List - Scrollable container with scrollbar matching Screenshot 1
+          Container(
+            height: 140,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFAFAFA),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF1F5F9)),
+            ),
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildUnderlineOption(
+                      label: 'Tất cả điểm đến',
+                      isSelected: _selectedDestination == 'all',
+                      onTap: () => setState(() => _selectedDestination = 'all'),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 14,
+                      runSpacing: 7,
+                      children: destinations.map((dest) {
+                        return _buildUnderlineOption(
+                          label: dest,
+                          isSelected: _selectedDestination == dest,
+                          onTap: () => setState(() => _selectedDestination = dest),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // Section 1: Thời lượng chuyến đi
+          const Text(
+            'Thời lượng chuyến đi',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: _durations.map((dur) {
+                final isSel = _selectedDuration == dur['id'];
+                return Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: _buildUnderlineOption(
+                    label: dur['label']!,
+                    isSelected: isSel,
+                    onTap: () => setState(() => _selectedDuration = dur['id']!),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Section 2: Giá tiền ước tính
+          const Text(
+            'Giá tiền ước tính',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: _budgets.map((b) {
+                final isSel = _selectedBudget == b['id'];
+                return Padding(
+                  padding: const EdgeInsets.only(right: 14),
+                  child: _buildUnderlineOption(
+                    label: b['label']!,
+                    isSelected: isSel,
+                    onTap: () => setState(() => _selectedBudget = b['id']!),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          if (_hasActiveFilters) ...[
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _resetFilters,
+                icon: const Icon(Icons.refresh_rounded, size: 14, color: Color(0xFFE11D48)),
+                label: const Text('Đặt lại bộ lọc', style: TextStyle(fontSize: 11.5, color: Color(0xFFE11D48), fontWeight: FontWeight.w700)),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnderlineOption({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+          color: isSelected ? const Color(0xFF047857) : const Color(0xFF475569),
+          decoration: isSelected ? TextDecoration.underline : TextDecoration.none,
+          decorationColor: const Color(0xFF047857),
+          decorationThickness: 2,
+        ),
       ),
     );
   }

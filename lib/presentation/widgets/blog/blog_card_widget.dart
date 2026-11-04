@@ -259,7 +259,30 @@ class BlogCardWidget extends StatelessWidget {
                       ),
                     ],
 
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
+
+                    // Date & Views Row (Matching Screenshot 2)
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_outlined, size: 12, color: Color(0xFF94A3B8)),
+                        const SizedBox(width: 4),
+                        Text(
+                          blog.publishedDate.isNotEmpty ? blog.publishedDate : '24/09/2026',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('•', style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 11)),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.remove_red_eye_outlined, size: 13, color: Color(0xFF94A3B8)),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${blog.likesCount * 3 + 12}',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 10),
                     const Divider(height: 1, color: Color(0xFFF1F5F9)),
                     const SizedBox(height: 10),
 

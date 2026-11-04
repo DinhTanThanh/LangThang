@@ -119,20 +119,6 @@ class ItineraryCatalogCard extends StatelessWidget {
                         ),
                       ),
                     ),
-
-                    // Bookmark Icon Button
-                    if (onToggleSave != null)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: Icon(
-                          isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                          color: isSaved ? const Color(0xFFE11D48) : const Color(0xFF94A3B8),
-                          size: 22,
-                        ),
-                        onPressed: () => onToggleSave?.call(itinerary.id),
-                      ),
                   ],
                 ),
 

@@ -577,4 +577,103 @@ class UserTripItemModel {
   }
 }
 
+/// Mô hình điểm bản đồ dấu chân du lịch (User Travel Map Place - Matching Share_Locations UserMapPlaceDto)
+class UserMapPlaceModel {
+  final int id;
+  final int placeId;
+  final String title;
+  final String? coverImg;
+  final String? category;
+  final String? province;
+  final double latitude;
+  final double longitude;
+  final String interactionType; // 'review', 'visit_log', 'proposal'
+  final String interactionLabel;
+  final double? rating;
+  final String? date;
+
+  const UserMapPlaceModel({
+    required this.id,
+    required this.placeId,
+    required this.title,
+    this.coverImg,
+    this.category,
+    this.province,
+    required this.latitude,
+    required this.longitude,
+    required this.interactionType,
+    required this.interactionLabel,
+    this.rating,
+    this.date,
+  });
+
+  factory UserMapPlaceModel.fromJson(Map<String, dynamic> json) {
+    double lat = 16.0544;
+    double lng = 108.2022;
+
+    if (json['coordinates'] is List && (json['coordinates'] as List).isNotEmpty) {
+      final list = json['coordinates'] as List;
+      if (list.length >= 2) {
+        // Backend coordinates are [Lng, Lat]
+        final first = (list[0] as num?)?.toDouble() ?? 0.0;
+        final second = (list[1] as num?)?.toDouble() ?? 0.0;
+        if (first > second && first > 50) {
+          lng = first;
+          lat = second;
+        } else {
+          lat = first;
+          lng = second;
+        }
+      }
+    } else {
+      lat = (json['latitude'] as num?)?.toDouble() ?? (json['lat'] as num?)?.toDouble() ?? 16.0544;
+      lng = (json['longitude'] as num?)?.toDouble() ?? (json['lng'] as num?)?.toDouble() ?? 108.2022;
+    }
+
+    if (lat > 50 && lng < 50) {
+      final temp = lat;
+      lat = lng;
+      lng = temp;
+    }
+
+    // Default coordinates in Vietnam range
+    if (lng < 100 || lng > 115 || lat < 8 || lat > 25) {
+      lng = 108.2022;
+      lat = 16.0544;
+    }
+
+    return UserMapPlaceModel(
+      id: json['id'] is num ? (json['id'] as num).toInt() : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      placeId: json['placeId'] is num ? (json['placeId'] as num).toInt() : int.tryParse(json['placeId']?.toString() ?? '0') ?? 0,
+      title: json['title']?.toString() ?? (json['name']?.toString() ?? 'Địa điểm'),
+      coverImg: json['coverImg']?.toString() ?? json['image']?.toString() ?? json['coverImageUrl']?.toString(),
+      category: json['category']?.toString(),
+      province: json['province']?.toString(),
+      latitude: lat,
+      longitude: lng,
+      interactionType: json['interactionType']?.toString() ?? 'review',
+      interactionLabel: json['interactionLabel']?.toString() ?? 'Điểm đến',
+      rating: (json['rating'] as num?)?.toDouble(),
+      date: json['date']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'placeId': placeId,
+      'title': title,
+      'coverImg': coverImg,
+      'category': category,
+      'province': province,
+      'coordinates': [longitude, latitude],
+      'interactionType': interactionType,
+      'interactionLabel': interactionLabel,
+      'rating': rating,
+      'date': date,
+    };
+  }
+}
+
+
 

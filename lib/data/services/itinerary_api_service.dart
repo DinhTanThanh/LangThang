@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/api_constants.dart';
@@ -666,6 +667,25 @@ class ItineraryApiService {
         message: 'Không thể kết nối đến máy chủ: $e',
         data: false,
       );
+    }
+  }
+
+  /// Xóa chuyến đi (/api/trips/{id})
+  Future<bool> deleteTrip(int tripId) async {
+    try {
+      final token = await AuthService().getAccessToken();
+      final headers = <String, String>{
+        'Accept': 'application/json',
+      };
+      if (token != null && token.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/trips/$tripId');
+      final res = await http.delete(uri, headers: headers).timeout(const Duration(seconds: 8));
+      return res.statusCode >= 200 && res.statusCode < 300;
+    } catch (e) {
+      debugPrint('[ItineraryApiService] deleteTrip error: $e');
+      return false;
     }
   }
 

@@ -140,9 +140,16 @@ class _LeaderboardIndexScreenState extends State<LeaderboardIndexScreen> {
     }
 
     final data = _overviewData;
-    final title = data?.title ?? 'Bảng Xếp Hạng Du Lịch Xuất Sắc Nhất 2026';
-    final subtitle = data?.subtitle ??
-        'Hàng năm, chúng tôi tôn vinh những điểm đến, khách sạn, nhà hàng và hoạt động du lịch yêu thích nhất của du khách dựa trên các đánh giá thực tế được thu thập qua 12 tháng.';
+    final rawTitle = data?.title;
+    final title = (rawTitle != null && rawTitle.isNotEmpty)
+        ? rawTitle
+        : 'Bảng Xếp Hạng Du Lịch Xuất Sắc Nhất 2026';
+    final rawSubtitle = data?.subtitle;
+    final subtitle = (rawSubtitle != null &&
+            rawSubtitle.isNotEmpty &&
+            !rawSubtitle.contains('Hàng năm, chúng tôi tôn vinh'))
+        ? rawSubtitle
+        : 'Mỗi năm, chúng tôi chọn lắng nghe những câu chuyện chân thực nhất từ cộng đồng xê dịch để tìm ra những tọa độ ẩm thực, lưu trú và trải nghiệm mang đậm bản sắc địa phương.';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 40),
@@ -161,7 +168,7 @@ class _LeaderboardIndexScreenState extends State<LeaderboardIndexScreen> {
 
         const SizedBox(height: 14),
 
-        // Intro paragraphs (Matching Screenshot 1)
+        // Intro paragraph 1
         Text(
           subtitle,
           style: const TextStyle(
@@ -173,8 +180,9 @@ class _LeaderboardIndexScreenState extends State<LeaderboardIndexScreen> {
 
         const SizedBox(height: 10),
 
+        // Intro paragraph 2
         const Text(
-          'Những người chiến thắng năm 2026 là sự tôn vinh tất cả những chuyến đi đáng nhớ của chúng ta trong năm qua tất cả những vùng đất mới lạ chúng ta đã khám phá và tất cả những lần chúng ta nói "đồng ý" với những cuộc phiêu lưu mới. Chúng tôi sẽ lần lượt công bố danh sách đoạt giải theo từng hạng mục trong năm, hãy tiếp tục theo dõi để cập nhật các thông tin mới nhất.',
+          'Bảng vinh danh 2026 không chỉ là danh sách những cái tên xuất sắc, mà là lời tri ân gửi đến từng góc phố quen, từng hương vị độc đáo và những con người đã làm nên linh hồn cho mỗi vùng đất bạn từng ghé qua. Danh sách tiêu biểu của từng nhóm trải nghiệm sẽ được hé lộ dần trong thời gian tới. Hãy đồng hành cùng chúng tôi để đón chờ những gợi ý mới nhất cho hành trình sắp tới.',
           style: TextStyle(
             fontSize: 13,
             color: Color(0xFF334155),
