@@ -171,28 +171,6 @@ class ItineraryCard extends StatelessWidget {
                       ),
                     ),
 
-                    // Bookmark Action
-                    InkWell(
-                      onTap: () => onSave?.call(itinerary.id),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: isSaved ? const Color(0xFFFFF1F2) : Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSaved ? const Color(0xFFFFE4E6) : const Color(0xFFE5E7EB),
-                          ),
-                        ),
-                        child: Icon(
-                          isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                          size: 17,
-                          color: isSaved ? const Color(0xFFE11D48) : const Color(0xFF4B5563),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-
                     // Expand / Collapse Action
                     ElevatedButton(
                       onPressed: onToggleExpand,

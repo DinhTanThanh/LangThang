@@ -14,6 +14,7 @@ import '../../widgets/region/region_spotlight_reviews.dart';
 import '../blog/blog_screen.dart';
 import 'destinations_screen.dart';
 import 'place_detail_screen.dart';
+import 'province_screen.dart';
 import 'travel_map_screen.dart';
 
 class RegionScreen extends StatefulWidget {
@@ -69,7 +70,23 @@ class _RegionScreenState extends State<RegionScreen> {
     }
   }
 
+  void _handleSelectProvince(String province) {
+    if (province.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ProvinceScreen(provinceName: province),
+        ),
+      );
+    }
+  }
+
   void _handleSearch(String query, String? province) {
+    if (query.isEmpty && province != null && province.isNotEmpty) {
+      _handleSelectProvince(province);
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -164,20 +181,6 @@ class _RegionScreenState extends State<RegionScreen> {
     );
   }
 
-  void _handleShare() {
-    if (_regionData != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đã sao chép liên kết khám phá ${_regionData!.name}'),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          backgroundColor: const Color(0xFF004F32),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final title = _regionData?.name ?? (widget.region?.name ?? 'Khám phá vùng miền');
@@ -201,13 +204,6 @@ class _RegionScreenState extends State<RegionScreen> {
             letterSpacing: -0.3,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share_outlined, color: Color(0xFF334155), size: 20),
-            onPressed: _handleShare,
-          ),
-          const SizedBox(width: 4),
-        ],
       ),
       body: _buildBody(),
     );
@@ -239,6 +235,7 @@ class _RegionScreenState extends State<RegionScreen> {
             RegionSearchBar(
               data: data,
               onSearch: _handleSearch,
+              onSelectProvince: _handleSelectProvince,
               onOpenMap: _handleOpenMap,
             ),
 

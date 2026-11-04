@@ -3,6 +3,7 @@ import '../../../data/models/review_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../screens/auth/login_screen.dart';
 import 'review_comment_item.dart';
 
 class ReviewCommentThread extends StatefulWidget {
@@ -54,6 +55,71 @@ class _ReviewCommentThreadState extends State<ReviewCommentThread> {
     }
   }
 
+  Future<bool> _ensureAuthenticated({bool forceRedirect = false}) async {
+    final loggedIn = await AuthService().isLoggedIn();
+    final token = await AuthService().getToken();
+    if (loggedIn && token != null && token.isNotEmpty && !forceRedirect) {
+      final user = await AuthService().getCachedUser();
+      if (mounted) {
+        setState(() {
+          _isAuthenticated = true;
+          _currentUser = user;
+        });
+      }
+      return true;
+    }
+
+    if (!mounted) return false;
+
+    final shouldLogin = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.lock_outline_rounded, color: Color(0xFF059669)),
+            SizedBox(width: 8),
+            Text('Yêu cầu đăng nhập', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          forceRedirect
+              ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại để tiếp tục gửi bình luận.'
+              : 'Bạn cần đăng nhập tài khoản để gửi bình luận và phản hồi.',
+          style: const TextStyle(fontSize: 13.5, color: Color(0xFF475569), height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy bỏ', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF059669),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Đăng nhập ngay', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogin == true && mounted) {
+      final success = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+      if (success == true && mounted) {
+        await _checkAuth();
+        return true;
+      }
+    }
+    return false;
+  }
+
   Future<void> _fetchComments() async {
     setState(() {
       _isLoading = true;
@@ -85,12 +151,8 @@ class _ReviewCommentThreadState extends State<ReviewCommentThread> {
   }
 
   Future<void> _handleRootSubmit() async {
-    if (!_isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng đăng nhập để gửi bình luận.')),
-      );
-      return;
-    }
+    final hasAuth = await _ensureAuthenticated();
+    if (!hasAuth) return;
 
     final text = _rootController.text.trim();
     if (text.isEmpty) return;
@@ -101,10 +163,25 @@ class _ReviewCommentThreadState extends State<ReviewCommentThread> {
     });
 
     try {
-      final res = await PlaceApiService().createReviewComment(
+      var res = await PlaceApiService().createReviewComment(
         widget.reviewId,
         content: text,
       );
+
+      // If token expired, prompt to login and auto-retry
+      if (res.code == '401' ||
+          res.message.toLowerCase().contains('hết hạn') ||
+          res.message.toLowerCase().contains('đăng nhập')) {
+        if (mounted) {
+          final reauth = await _ensureAuthenticated(forceRedirect: true);
+          if (reauth) {
+            res = await PlaceApiService().createReviewComment(
+              widget.reviewId,
+              content: text,
+            );
+          }
+        }
+      }
 
       if (mounted) {
         if (res.data != null) {
@@ -123,7 +200,7 @@ class _ReviewCommentThreadState extends State<ReviewCommentThread> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Đã xảy ra lỗi khi gửi bình luận.';
+          _errorMessage = 'Đã xảy ra lỗi khi gửi bình luận: $e';
         });
       }
     } finally {
@@ -134,19 +211,31 @@ class _ReviewCommentThreadState extends State<ReviewCommentThread> {
   }
 
   Future<bool> _handleReplySubmit(int parentId, String content) async {
-    if (!_isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng đăng nhập để gửi phản hồi.')),
-      );
-      return false;
-    }
+    final hasAuth = await _ensureAuthenticated();
+    if (!hasAuth) return false;
 
     try {
-      final res = await PlaceApiService().createReviewComment(
+      var res = await PlaceApiService().createReviewComment(
         widget.reviewId,
         content: content,
         parentId: parentId,
       );
+
+      // If token expired, prompt to login and auto-retry
+      if (res.code == '401' ||
+          res.message.toLowerCase().contains('hết hạn') ||
+          res.message.toLowerCase().contains('đăng nhập')) {
+        if (mounted) {
+          final reauth = await _ensureAuthenticated(forceRedirect: true);
+          if (reauth) {
+            res = await PlaceApiService().createReviewComment(
+              widget.reviewId,
+              content: content,
+              parentId: parentId,
+            );
+          }
+        }
+      }
 
       if (res.data != null && mounted) {
         setState(() {
@@ -412,6 +501,7 @@ class _ReviewCommentThreadState extends State<ReviewCommentThread> {
                 comment: c,
                 isAuthenticated: _isAuthenticated,
                 currentUser: _currentUser,
+                onRequireAuth: _ensureAuthenticated,
                 onReplySubmit: _handleReplySubmit,
                 onCommentUpdate: _handleCommentUpdate,
                 onCommentDelete: _handleCommentDelete,

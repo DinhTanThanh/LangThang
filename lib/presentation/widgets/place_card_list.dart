@@ -18,22 +18,6 @@ class PlaceCardList extends StatefulWidget {
 }
 
 class _PlaceCardListState extends State<PlaceCardList> {
-  late bool _isSaved;
-
-  @override
-  void initState() {
-    super.initState();
-    _isSaved = widget.place.isSaved;
-  }
-
-  @override
-  void didUpdateWidget(covariant PlaceCardList oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.place.isSaved != widget.place.isSaved) {
-      _isSaved = widget.place.isSaved;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final locationText = widget.place.province.isNotEmpty
@@ -83,63 +67,68 @@ class _PlaceCardListState extends State<PlaceCardList> {
         color: Colors.transparent,
         child: InkWell(
           onTap: widget.onTap,
-          child: IntrinsicHeight(
+          child: Padding(
+            padding: const EdgeInsets.all(10),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Left Image (Thumbnail with Category Badge)
-                SizedBox(
-                  width: 108,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.network(
-                        widget.place.img,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: const Color(0xFFF1F5F9),
-                          child: const Icon(
-                            Icons.location_on_outlined,
-                            size: 28,
-                            color: Color(0xFFCBD5E1),
+                // Left Image (Framed thumbnail with balanced aspect ratio)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox(
+                    width: 118,
+                    height: 126,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          widget.place.img,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.center,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            color: const Color(0xFFF1F5F9),
+                            child: const Icon(
+                              Icons.location_on_outlined,
+                              size: 28,
+                              color: Color(0xFFCBD5E1),
+                            ),
                           ),
                         ),
-                      ),
-                      if (categoryBadge.isNotEmpty)
-                        Positioned(
-                          top: 6,
-                          left: 6,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0F172A).withValues(alpha: 0.8),
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: Text(
-                              categoryBadge,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
+                        if (categoryBadge.isNotEmpty)
+                          Positioned(
+                            top: 6,
+                            left: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A).withValues(alpha: 0.8),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                categoryBadge,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
+                const SizedBox(width: 10),
 
                 // Right Content Body
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                             // Header Row: Location, Rating, Save Button
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
@@ -195,28 +184,6 @@ class _PlaceCardListState extends State<PlaceCardList> {
                                       ),
                                     ),
                                   ],
-                                ),
-                                const SizedBox(width: 5),
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() => _isSaved = !_isSaved);
-                                    widget.onToggleSave?.call(_isSaved);
-                                  },
-                                  child: Container(
-                                    width: 26,
-                                    height: 26,
-                                    decoration: BoxDecoration(
-                                      color: _isSaved
-                                          ? const Color(0xFFF43F5E)
-                                          : const Color(0xFFF1F5F9),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      _isSaved ? Icons.favorite : Icons.favorite_border,
-                                      color: _isSaved ? Colors.white : const Color(0xFF64748B),
-                                      size: 13,
-                                    ),
-                                  ),
                                 ),
                               ],
                             ),
@@ -327,12 +294,11 @@ class _PlaceCardListState extends State<PlaceCardList> {
                       ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }

@@ -100,11 +100,13 @@ class _RecentVisitedFloatingDockState extends State<RecentVisitedFloatingDock>
 
     // Default initial position on right side, safely above bottom cards/navigation
     if (_position == null) {
+      final maxX = (screenSize.width - 60) > 12.0 ? (screenSize.width - 60) : 12.0;
+      final maxY = (screenSize.height - 100) > (padding.top + 20) ? (screenSize.height - 100) : (padding.top + 20);
       final initialX = screenSize.width - (_isMiniMode ? 60 : 175);
       final initialY = screenSize.height - widget.bottomMargin - 120;
       _position = Offset(
-        initialX.clamp(12.0, screenSize.width - 60),
-        initialY.clamp(padding.top + 20, screenSize.height - 100),
+        initialX.clamp(12.0, maxX),
+        initialY.clamp(padding.top + 20, maxY),
       );
     }
 

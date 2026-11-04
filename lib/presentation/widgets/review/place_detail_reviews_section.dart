@@ -3,6 +3,7 @@ import '../../../data/models/review_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../screens/auth/login_screen.dart';
 import 'create_review_modal.dart';
 import 'review_item_card.dart';
 
@@ -25,11 +26,16 @@ class PlaceDetailReviewsSection extends StatefulWidget {
 }
 
 class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
+  static const int _pageSize = 10;
+
   List<ReviewItemModel> _reviews = [];
   Map<String, int> _ratingBreakdown = {'5': 0, '4': 0, '3': 0, '2': 0, '1': 0};
   late double _avgRating;
   late int _totalReviews;
+
+  int _currentPage = 1;
   bool _isLoading = false;
+  bool _isLoadingMore = false;
   int? _selectedRatingFilter;
 
   bool _isAuthenticated = false;
@@ -41,7 +47,7 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
     _avgRating = widget.avgRating;
     _totalReviews = widget.totalReviews;
     _checkAuth();
-    _fetchReviews();
+    _fetchInitialReviews();
   }
 
   Future<void> _checkAuth() async {
@@ -55,17 +61,18 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
     }
   }
 
-  Future<void> _fetchReviews({int? rating}) async {
+  Future<void> _fetchInitialReviews({int? rating}) async {
     setState(() {
       _isLoading = true;
       _selectedRatingFilter = rating;
+      _currentPage = 1;
     });
 
     try {
       final res = await PlaceApiService().getPlaceReviews(
         widget.placeId,
         page: 1,
-        pageSize: 30,
+        pageSize: _pageSize,
         rating: rating,
       );
 
@@ -78,14 +85,52 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
             if (res.data!.avgRating > 0) {
               _avgRating = res.data!.avgRating;
             }
+          } else {
+            // Count for specific rating filter
+            final filterCount = res.data!.ratingBreakdown[rating.toString()] ?? res.data!.items.length;
+            _totalReviews = filterCount;
           }
         });
       }
     } catch (e) {
-      debugPrint('[PlaceDetailReviewsSection] _fetchReviews error: $e');
+      debugPrint('[PlaceDetailReviewsSection] _fetchInitialReviews error: $e');
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _loadMoreReviews() async {
+    if (_isLoadingMore || _reviews.length >= _totalReviews) return;
+
+    final nextPage = _currentPage + 1;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final res = await PlaceApiService().getPlaceReviews(
+        widget.placeId,
+        page: nextPage,
+        pageSize: _pageSize,
+        rating: _selectedRatingFilter,
+      );
+
+      if (mounted && res.data != null && res.data!.items.isNotEmpty) {
+        setState(() {
+          final existingIds = _reviews.map((r) => r.id).toSet();
+          final newItems = res.data!.items.where((r) => !existingIds.contains(r.id)).toList();
+          _reviews = [..._reviews, ...newItems];
+          _currentPage = nextPage;
+          if (_selectedRatingFilter == null && res.data!.totalReviews > 0) {
+            _totalReviews = res.data!.totalReviews;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[PlaceDetailReviewsSection] _loadMoreReviews error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
       }
     }
   }
@@ -117,7 +162,26 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
     });
   }
 
-  void _openWriteReviewModal() {
+  Future<void> _openWriteReviewModal() async {
+    final isLoggedIn = await AuthService().isLoggedIn();
+    if (!isLoggedIn) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vui lòng đăng nhập để viết đánh giá địa điểm.'),
+          backgroundColor: Color(0xFF1E293B),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      final loggedIn = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+      );
+      if (loggedIn != true || !mounted) return;
+    }
+
+    if (!mounted) return;
     CreateReviewModal.show(
       context,
       placeId: widget.placeId,
@@ -129,6 +193,7 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
   @override
   Widget build(BuildContext context) {
     final displayAvg = _avgRating > 0 ? _avgRating : 5.0;
+    final hasMore = _reviews.length < _totalReviews;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -161,9 +226,9 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Đánh giá & Phản hồi cộng đồng ($_totalReviews)',
+                            'Đánh giá từ cộng đồng',
                             style: const TextStyle(
-                              fontSize: 15.5,
+                              fontSize: 16.5,
                               fontWeight: FontWeight.w800,
                               color: Color(0xFF111827),
                             ),
@@ -174,9 +239,9 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    const Text(
-                      'Trải nghiệm thực tế và cảm nhận từ các du khách đã từng ghé thăm',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+                    Text(
+                      '$_totalReviews đánh giá từ du khách đã từng ghé thăm',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF6B7280)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -193,9 +258,9 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF059669),
+                  backgroundColor: const Color(0xFF047857),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   elevation: 0,
                 ),
@@ -266,9 +331,9 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                       return GestureDetector(
                         onTap: () {
                           if (_selectedRatingFilter == star) {
-                            _fetchReviews();
+                            _fetchInitialReviews();
                           } else {
-                            _fetchReviews(rating: star);
+                            _fetchInitialReviews(rating: star);
                           }
                         },
                         child: Padding(
@@ -331,7 +396,7 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                 _buildFilterChip(
                   label: 'Tất cả ($_totalReviews)',
                   isSelected: _selectedRatingFilter == null,
-                  onTap: () => _fetchReviews(),
+                  onTap: () => _fetchInitialReviews(),
                 ),
                 const SizedBox(width: 6),
                 ...[5, 4, 3, 2, 1].map((star) {
@@ -344,9 +409,9 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                       isSelected: isSelected,
                       onTap: () {
                         if (isSelected) {
-                          _fetchReviews();
+                          _fetchInitialReviews();
                         } else {
-                          _fetchReviews(rating: star);
+                          _fetchInitialReviews(rating: star);
                         }
                       },
                     ),
@@ -405,7 +470,7 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                 ],
               ),
             )
-          else
+          else ...[
             ..._reviews.map(
               (r) => ReviewItemCard(
                 key: ValueKey(r.id),
@@ -416,6 +481,49 @@ class _PlaceDetailReviewsSectionState extends State<PlaceDetailReviewsSection> {
                 onReviewDeleted: _handleReviewDeleted,
               ),
             ),
+
+            // 5. Load More Button matching Share_Locations
+            if (hasMore) ...[
+              const SizedBox(height: 16),
+              Center(
+                child: OutlinedButton.icon(
+                  onPressed: _isLoadingMore ? null : _loadMoreReviews,
+                  icon: _isLoadingMore
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF059669)),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 18,
+                          color: Color(0xFF059669),
+                        ),
+                  label: Text(
+                    _isLoadingMore
+                        ? 'Đang tải thêm đánh giá...'
+                        : 'Xem thêm đánh giá (${_reviews.length}/$_totalReviews)',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF1E293B),
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ],
       ),
     );

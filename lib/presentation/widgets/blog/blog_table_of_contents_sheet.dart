@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class BlogHeadingItem {
   final int index;
   final String title;
-  final int level; // 2 for H2, 3 for H3
+  final int level; // 1 for H1, 2 for H2, 3 for H3
 
   const BlogHeadingItem({
     required this.index,
@@ -48,7 +48,7 @@ class BlogTableOfContentsSheet extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -56,50 +56,51 @@ class BlogTableOfContentsSheet extends StatelessWidget {
           // Drag handle
           Center(
             child: Container(
-              width: 36,
+              width: 38,
               height: 4,
               decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DB),
+                color: const Color(0xFFE2E8F0),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
           const SizedBox(height: 16),
 
-          // Header Row
+          // Header Row (Matching Share_Locations BlogTableOfContents)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
-                children: const [
-                  Icon(Icons.format_list_bulleted_rounded, color: Color(0xFF059669), size: 20),
-                  SizedBox(width: 8),
+                children: [
+                  const Icon(Icons.account_tree_outlined, color: Color(0xFF065F46), size: 18),
+                  const SizedBox(width: 8),
                   Text(
-                    'Mục lục bài viết',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
+                    'MỤC LỤC BÀI VIẾT (${headings.length})',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ],
               ),
               IconButton(
-                icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF6B7280)),
+                icon: const Icon(Icons.close_rounded, size: 19, color: Color(0xFF64748B)),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
           const SizedBox(height: 10),
-          const Divider(height: 1, color: Color(0xFFF3F4F6)),
-          const SizedBox(height: 12),
 
           // Headings List
           if (headings.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
+              padding: EdgeInsets.symmetric(vertical: 24),
               child: Center(
-                child: Text('Bài viết không có đề mục phụ.', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
+                child: Text('Bài viết không có đề mục phụ.', style: TextStyle(color: Color(0xFF64748B), fontSize: 13)),
               ),
             )
           else
@@ -107,10 +108,11 @@ class BlogTableOfContentsSheet extends StatelessWidget {
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: headings.length,
-                separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF9FAFB)),
+                separatorBuilder: (context, index) => const SizedBox(height: 4),
                 itemBuilder: (context, index) {
                   final heading = headings[index];
-                  final isSub = heading.level > 2;
+                  final isH1 = heading.level == 1;
+                  final isH2 = heading.level == 2;
 
                   return InkWell(
                     onTap: () {
@@ -118,35 +120,54 @@ class BlogTableOfContentsSheet extends StatelessWidget {
                       onSelectHeading(heading.index);
                     },
                     borderRadius: BorderRadius.circular(10),
-                    child: Padding(
+                    child: Container(
                       padding: EdgeInsets.only(
-                        left: isSub ? 28 : 8,
-                        right: 8,
-                        top: 10,
-                        bottom: 10,
+                        left: isH1 ? 8 : (isH2 ? 16 : 26),
+                        right: 10,
+                        top: 8,
+                        bottom: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isH1 ? const Color(0xFFECFDF5).withValues(alpha: 0.6) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
+                          // Level badge (H1, H2, H3)
                           Container(
-                            width: 6,
-                            height: 6,
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isSub ? const Color(0xFF9CA3AF) : const Color(0xFF059669),
-                              shape: BoxShape.circle,
+                              color: isH1
+                                  ? const Color(0xFF065F46)
+                                  : isH2
+                                      ? const Color(0xFFE2E8F0)
+                                      : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(4),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
                             child: Text(
-                              heading.title,
+                              'H${heading.level}',
                               style: TextStyle(
-                                fontSize: isSub ? 12.5 : 13.5,
-                                fontWeight: isSub ? FontWeight.w600 : FontWeight.w800,
-                                color: isSub ? const Color(0xFF4B5563) : const Color(0xFF1F2937),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                                color: isH1 ? Colors.white : (isH2 ? const Color(0xFF334155) : const Color(0xFF64748B)),
                               ),
                             ),
                           ),
-                          const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Color(0xFFD1D5DB)),
+                          const SizedBox(width: 8),
+
+                          Expanded(
+                            child: Text(
+                              heading.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: isH1 ? 13 : (isH2 ? 12.5 : 11.5),
+                                fontWeight: isH1 ? FontWeight.w800 : (isH2 ? FontWeight.w600 : FontWeight.normal),
+                                color: isH1 ? const Color(0xFF064E3B) : const Color(0xFF1E293B),
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),

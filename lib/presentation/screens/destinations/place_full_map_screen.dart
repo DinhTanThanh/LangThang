@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../data/models/place_model.dart';
 import '../../widgets/mapbox_interactive_map.dart';
-import 'map_directions_screen.dart';
 import 'travel_map_screen.dart';
 
 class PlaceFullMapScreen extends StatefulWidget {
@@ -432,8 +431,11 @@ class _PlaceFullMapScreenState extends State<PlaceFullMapScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) =>
-                                    MapDirectionsScreen(place: place),
+                                builder: (context) => TravelMapScreen(
+                                  initialPlace: place,
+                                  initialSearchQuery: place.name,
+                                  autoStartDirections: true,
+                                ),
                               ),
                             );
                           },

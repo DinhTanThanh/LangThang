@@ -8,13 +8,47 @@ import '../mock/mock_data.dart';
 import 'auth_service.dart';
 import 'favorite_api_service.dart';
 
+class BlogOperationResult {
+  final bool success;
+  final bool savedToRemoteDatabase;
+  final String? blogId;
+  final String? message;
+  final int? statusCode;
+
+  const BlogOperationResult({
+    required this.success,
+    this.savedToRemoteDatabase = false,
+    this.blogId,
+    this.message,
+    this.statusCode,
+  });
+}
+
 class BlogApiService {
   static final BlogApiService _instance = BlogApiService._internal();
   factory BlogApiService() => _instance;
   BlogApiService._internal();
 
-  static const String _savedBlogsKey = 'user_saved_blog_ids';
-  static const String _likedBlogsKey = 'user_liked_blog_ids';
+  static const String _savedBlogsBaseKey = 'user_saved_blog_ids';
+  static const String _likedBlogsBaseKey = 'user_liked_blog_ids';
+  static const String _createdBlogsBaseKey = 'langthang_user_created_blogs_v1';
+
+  Future<String> _getSavedBlogsKey() async => await AuthService().getScopedKey(_savedBlogsBaseKey);
+  Future<String> _getLikedBlogsKey() async => await AuthService().getScopedKey(_likedBlogsBaseKey);
+  Future<String> _getCreatedBlogsKey() async => await AuthService().getScopedKey(_createdBlogsBaseKey);
+
+  List<String> _getCandidateBaseUrls() {
+    final List<String> list = [ApiConstants.baseUrl];
+    if (ApiConstants.baseUrl.contains('localhost:') ||
+        ApiConstants.baseUrl.contains('10.0.2.2:') ||
+        ApiConstants.baseUrl.contains('127.0.0.1:')) {
+      for (final port in [5000, 5021, 7027, 29036, 7001]) {
+        final alt = ApiConstants.baseUrl.replaceAll(RegExp(r':\d+'), ':$port');
+        if (!list.contains(alt)) list.add(alt);
+      }
+    }
+    return list;
+  }
 
   Map<String, dynamic>? _tryDecodeJson(http.Response response) {
     try {
@@ -29,7 +63,81 @@ class BlogApiService {
     return null;
   }
 
-  /// Lấy danh sách bài viết cẩm nang du lịch
+  /// Lấy danh sách các bài viết do chính người dùng tạo lưu trong Persistent Local Database
+  Future<List<BlogModel>> getCreatedBlogs() async {
+    try {
+      final key = await _getCreatedBlogsKey();
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(key) ?? [];
+      final result = <BlogModel>[];
+      for (final item in list) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic>) {
+            result.add(BlogModel.fromJson(decoded));
+          }
+        } catch (_) {}
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Lưu bài viết người dùng tạo vào Persistent Local Database
+  Future<void> _saveCreatedBlogToStorage(BlogModel blog) async {
+    try {
+      final key = await _getCreatedBlogsKey();
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(key) ?? [];
+      final existingBlogs = <BlogModel>[];
+      for (final item in list) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic>) {
+            existingBlogs.add(BlogModel.fromJson(decoded));
+          }
+        } catch (_) {}
+      }
+
+      final idx = existingBlogs.indexWhere((b) => b.id == blog.id || (blog.slug.isNotEmpty && b.slug == blog.slug));
+      if (idx != -1) {
+        existingBlogs[idx] = blog;
+      } else {
+        existingBlogs.insert(0, blog);
+      }
+
+      final updatedJsonList = existingBlogs.map((b) => jsonEncode(b.toJson())).toList();
+      await prefs.setStringList(key, updatedJsonList);
+    } catch (e) {
+      debugPrint('[BlogApiService] Error saving created blog to storage: $e');
+    }
+  }
+
+  /// Xóa bài viết khỏi Persistent Local Database
+  Future<void> _deleteCreatedBlogFromStorage(String blogId) async {
+    try {
+      final key = await _getCreatedBlogsKey();
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(key) ?? [];
+      final existingBlogs = <BlogModel>[];
+      for (final item in list) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic>) {
+            final model = BlogModel.fromJson(decoded);
+            if (model.id != blogId && model.slug != blogId) {
+              existingBlogs.add(model);
+            }
+          }
+        } catch (_) {}
+      }
+      final updatedJsonList = existingBlogs.map((b) => jsonEncode(b.toJson())).toList();
+      await prefs.setStringList(key, updatedJsonList);
+    } catch (_) {}
+  }
+
+  /// Lấy danh sách bài viết cẩm nang du lịch (Kết hợp API Server + Database cục bộ)
   Future<List<BlogModel>> getBlogs({
     String? category,
     String? keyword,
@@ -38,6 +146,10 @@ class BlogApiService {
     int page = 1,
     int pageSize = 50,
   }) async {
+    final localCreated = await getCreatedBlogs();
+    final savedIds = await getSavedBlogIds();
+    final likedIds = await getLikedBlogIds();
+
     try {
       final queryParams = <String, String>{
         'page': page.toString(),
@@ -50,11 +162,6 @@ class BlogApiService {
         queryParams['keyword'] = keyword.trim();
       }
 
-      final endpoints = [
-        '${ApiConstants.baseUrl}/api/blogs',
-        '${ApiConstants.baseUrl}/api/v1/blogs',
-      ];
-
       final token = await AuthService().getAccessToken();
       final headers = <String, String>{
         'Accept': 'application/json',
@@ -62,6 +169,11 @@ class BlogApiService {
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       }
+
+      final endpoints = [
+        '${ApiConstants.baseUrl}/api/blogs',
+        if (ApiConstants.baseUrl.contains(':5000')) '${ApiConstants.baseUrl.replaceAll(':5000', ':5021')}/api/blogs',
+      ];
 
       for (final endpoint in endpoints) {
         try {
@@ -76,10 +188,23 @@ class BlogApiService {
 
             if (items is List && items.isNotEmpty) {
               final rawList = items.map((e) => BlogModel.fromJson(e as Map<String, dynamic>)).toList();
-              final savedIds = await getSavedBlogIds();
-              final likedIds = await getLikedBlogIds();
 
-              final enrichedList = rawList.map((b) => _enrichBlog(b, likedIds, savedIds)).toList();
+              // Merge local created blogs that might not be on server yet
+              final combined = <BlogModel>[];
+              final seenIds = <String>{};
+
+              for (final b in localCreated) {
+                if (seenIds.add(b.id)) {
+                  combined.add(b);
+                }
+              }
+              for (final b in rawList) {
+                if (seenIds.add(b.id)) {
+                  combined.add(b);
+                }
+              }
+
+              final enrichedList = combined.map((b) => _enrichBlog(b, likedIds, savedIds)).toList();
 
               return filterBlogsList(
                 enrichedList,
@@ -96,8 +221,20 @@ class BlogApiService {
       debugPrint('[BlogApiService] getBlogs API error: $e');
     }
 
-    // Fallback: Local filtering on MockData.blogs
-    return _filterLocalBlogs(
+    // Fallback: Local filtering on (localCreated + MockData.blogs)
+    final combinedFallback = <BlogModel>[];
+    final seen = <String>{};
+    for (final b in localCreated) {
+      if (seen.add(b.id)) combinedFallback.add(b);
+    }
+    for (final b in MockData.blogs) {
+      if (seen.add(b.id)) combinedFallback.add(b);
+    }
+
+    final enrichedList = combinedFallback.map((b) => _enrichBlog(b, likedIds, savedIds)).toList();
+
+    return filterBlogsList(
+      enrichedList,
       category: category,
       keyword: keyword,
       region: region,
@@ -232,9 +369,10 @@ class BlogApiService {
       debugPrint('[BlogApiService] toggleLike API error: $e');
     }
 
-    // 2. Cập nhật danh sách liked locally
+    // 2. Cập nhật danh sách liked locally theo người dùng hiện tại
+    final likedKey = await _getLikedBlogsKey();
     final prefs = await SharedPreferences.getInstance();
-    final likedList = prefs.getStringList(_likedBlogsKey) ?? [];
+    final likedList = prefs.getStringList(likedKey) ?? [];
     bool nowLiked;
 
     if (apiLikedState != null) {
@@ -254,20 +392,7 @@ class BlogApiService {
       }
     }
 
-    await prefs.setStringList(_likedBlogsKey, likedList);
-
-    // Cập nhật trực tiếp vào MockData in-memory
-    final mockIndex = MockData.blogs.indexWhere((b) => b.id == idStr || b.slug == idStr);
-    if (mockIndex != -1) {
-      final old = MockData.blogs[mockIndex];
-      final newLikes = nowLiked
-          ? (old.isLiked ? old.likesCount : old.likesCount + 1)
-          : (old.isLiked ? (old.likesCount > 0 ? old.likesCount - 1 : 0) : old.likesCount);
-      MockData.blogs[mockIndex] = old.copyWith(
-        isLiked: nowLiked,
-        likesCount: newLikes,
-      );
-    }
+    await prefs.setStringList(likedKey, likedList);
 
     return nowLiked;
   }
@@ -290,8 +415,9 @@ class BlogApiService {
     }
 
     final parsedId = int.tryParse(idStr) ?? (idStr.hashCode.abs() % 100000);
+    final savedKey = await _getSavedBlogsKey();
     final prefs = await SharedPreferences.getInstance();
-    final savedList = prefs.getStringList(_savedBlogsKey) ?? [];
+    final savedList = prefs.getStringList(savedKey) ?? [];
     bool nowSaved = false;
 
     if (savedList.contains(idStr)) {
@@ -315,7 +441,7 @@ class BlogApiService {
       );
     }
 
-    await prefs.setStringList(_savedBlogsKey, savedList);
+    await prefs.setStringList(savedKey, savedList);
     return nowSaved;
   }
 
@@ -323,8 +449,9 @@ class BlogApiService {
   Future<Set<String>> getSavedBlogIds() async {
     final set = <String>{};
     try {
+      final savedKey = await _getSavedBlogsKey();
       final prefs = await SharedPreferences.getInstance();
-      set.addAll(prefs.getStringList(_savedBlogsKey) ?? []);
+      set.addAll(prefs.getStringList(savedKey) ?? []);
     } catch (_) {}
 
     try {
@@ -343,15 +470,69 @@ class BlogApiService {
   Future<Set<String>> getLikedBlogIds() async {
     final set = <String>{};
     try {
+      final likedKey = await _getLikedBlogsKey();
       final prefs = await SharedPreferences.getInstance();
-      set.addAll(prefs.getStringList(_likedBlogsKey) ?? []);
+      set.addAll(prefs.getStringList(likedKey) ?? []);
     } catch (_) {}
 
     return set;
   }
 
-  /// Tạo bài viết mới
-  Future<bool> createBlog({
+  /// Lấy danh sách bài viết do chính tôi viết (/api/blogs/my-blogs hoặc Database cục bộ)
+  Future<List<BlogModel>> getMyBlogs({int? status, int page = 1, int pageSize = 50}) async {
+    final localCreated = await getCreatedBlogs();
+    final savedIds = await getSavedBlogIds();
+    final likedIds = await getLikedBlogIds();
+
+    try {
+      final token = await AuthService().getAccessToken();
+      if (token != null && token.isNotEmpty) {
+        final queryParams = <String, String>{
+          'page': page.toString(),
+          'pageSize': pageSize.toString(),
+        };
+        if (status != null) {
+          queryParams['status'] = status.toString();
+        }
+
+        final uri = Uri.parse('${ApiConstants.baseUrl}/api/blogs/my-blogs').replace(queryParameters: queryParams);
+        final headers = {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        };
+
+        final response = await http.get(uri, headers: headers).timeout(const Duration(seconds: 4));
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+          final dynamic items = decoded is Map<String, dynamic>
+              ? (decoded['data'] ?? decoded['items'])
+              : decoded;
+
+          if (items is List) {
+            final rawList = items.map((e) => BlogModel.fromJson(e as Map<String, dynamic>)).toList();
+            final combined = <BlogModel>[];
+            final seenIds = <String>{};
+
+            for (final b in localCreated) {
+              if (seenIds.add(b.id)) combined.add(b);
+            }
+            for (final b in rawList) {
+              if (seenIds.add(b.id)) combined.add(b);
+            }
+
+            return combined.map((b) => _enrichBlog(b, likedIds, savedIds)).toList();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[BlogApiService] getMyBlogs API error: $e');
+    }
+
+    return localCreated.map((b) => _enrichBlog(b, likedIds, savedIds)).toList();
+  }
+
+  /// Tạo bài viết mới (hỗ trợ status: 0 = Nháp, 1 = Xuất bản, 2 = Gửi duyệt)
+  Future<BlogOperationResult> createBlog({
     required String title,
     required String summary,
     required String category,
@@ -359,49 +540,272 @@ class BlogApiService {
     required String coverUrl,
     required String content,
     int readTimeMinutes = 5,
+    int status = 1,
   }) async {
-    try {
-      final token = await AuthService().getAccessToken();
-      final uri = Uri.parse('${ApiConstants.baseUrl}/api/blogs');
-      final body = jsonEncode({
-        'title': title,
-        'excerpt': summary,
-        'categoryId': categoryId ?? 1,
-        'category': category,
-        'coverImageUrl': coverUrl,
-        'contentJSON': content,
-        'readTimeMinutes': readTimeMinutes,
-        'status': 1,
-      });
+    String generatedId = 'blog-${DateTime.now().millisecondsSinceEpoch}';
+    final finalTitle = title.trim();
+    final finalSummary = summary.trim();
 
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-      };
-      if (token != null && token.isNotEmpty) {
-        headers['Authorization'] = 'Bearer $token';
+    // Lấy thông tin tác giả thực tế của người dùng đang đăng nhập
+    final currentUser = AuthService().currentUser;
+    final authorName = (currentUser != null && currentUser.fullName.isNotEmpty) ? currentUser.fullName : 'Bạn';
+    final authorAvatar = currentUser?.avatarUrl ?? '';
+    final authorId = currentUser?.id.toString() ?? '';
+
+    final token = await AuthService().getAccessToken();
+    bool serverSuccess = false;
+    String? serverError;
+    int? lastStatus;
+
+    if (token == null || token.isEmpty || token.startsWith('google_session_token_')) {
+      lastStatus = 401;
+      serverError = 'Bạn chưa đăng nhập hoặc phiên làm việc đã hết hạn.';
+    } else {
+      final endpoints = [
+        '${ApiConstants.baseUrl}/api/blogs',
+        if (ApiConstants.baseUrl.contains(':5000')) '${ApiConstants.baseUrl.replaceAll(':5000', ':5021')}/api/blogs',
+      ];
+
+      for (final endpoint in endpoints) {
+        try {
+          final uri = Uri.parse(endpoint);
+          final body = jsonEncode({
+            'title': finalTitle,
+            'excerpt': finalSummary,
+            'categoryId': categoryId ?? 13,
+            'category': category,
+            'coverImageUrl': coverUrl,
+            'contentJSON': content,
+            'readTimeMinutes': readTimeMinutes,
+            'status': status,
+          });
+
+          final headers = <String, String>{
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          };
+
+          final res = await http.post(uri, headers: headers, body: body).timeout(const Duration(seconds: 4));
+          lastStatus = res.statusCode;
+          debugPrint('[BlogApiService] POST $uri -> HTTP ${res.statusCode}: ${res.body}');
+
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            serverSuccess = true;
+            final decoded = _tryDecodeJson(res);
+            if (decoded != null && decoded['data'] is Map<String, dynamic>) {
+              final serverData = decoded['data'] as Map<String, dynamic>;
+              if (serverData['id'] != null) {
+                generatedId = serverData['id'].toString();
+              }
+            }
+            break;
+          } else if (res.statusCode == 401) {
+            serverError = 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.';
+            break; // Token issue, no point trying other ports
+          } else {
+            final decoded = _tryDecodeJson(res);
+            final msg = decoded?['message'] ?? decoded?['title'] ?? (res.body.isNotEmpty ? res.body : 'Lỗi từ máy chủ');
+            serverError = 'HTTP ${res.statusCode}: $msg';
+            break;
+          }
+        } catch (e) {
+          debugPrint('[BlogApiService] createBlog attempt failed on $endpoint: $e');
+          serverError = 'Không thể kết nối đến máy chủ Backend: $e';
+        }
       }
+    }
 
-      final res = await http.post(uri, headers: headers, body: body).timeout(const Duration(seconds: 5));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return true;
-      }
-    } catch (_) {}
-
-    // Add to MockData as local fallback
+    // Khởi tạo BlogModel hoàn chỉnh và lưu ngay vào Database cục bộ bền vững
     final newBlog = BlogModel(
-      id: 'blog-${DateTime.now().millisecondsSinceEpoch}',
-      title: title,
-      summary: summary,
+      id: generatedId,
+      slug: generatedId,
+      title: finalTitle,
+      summary: finalSummary,
       category: category,
       categoryId: categoryId,
       imageUrl: coverUrl.isNotEmpty ? coverUrl : 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-      author: const BlogAuthorModel(name: 'Bạn', role: 'Thành viên', rank: 'Lữ khách'),
-      publishedDate: 'Hôm nay',
+      author: BlogAuthorModel(
+        id: authorId,
+        name: authorName,
+        avatar: authorAvatar,
+        role: 'Tác giả',
+        rank: 'Thổ địa',
+      ),
+      publishedDate: 'Vừa xong',
       readTimeMinutes: readTimeMinutes,
       content: content,
       featured: false,
+      status: status,
     );
+
+    // Lưu vào database SharedPreferences
+    await _saveCreatedBlogToStorage(newBlog);
+
+    // Cập nhật ngay vào bộ nhớ MockData
+    MockData.blogs.removeWhere((b) => b.id == newBlog.id || b.slug == newBlog.slug);
     MockData.blogs.insert(0, newBlog);
+
+    return BlogOperationResult(
+      success: true,
+      savedToRemoteDatabase: serverSuccess,
+      blogId: generatedId,
+      message: serverSuccess ? 'Thành công' : (serverError ?? 'Không thể kết nối máy chủ API'),
+      statusCode: lastStatus,
+    );
+  }
+
+  /// Cập nhật bài viết hiện có hoặc bản nháp
+  Future<BlogOperationResult> updateBlog(
+    dynamic blogId, {
+    required String title,
+    required String summary,
+    required String category,
+    int? categoryId,
+    required String coverUrl,
+    required String content,
+    int readTimeMinutes = 5,
+    int status = 1,
+  }) async {
+    final idStr = blogId.toString();
+    final finalTitle = title.trim();
+    final finalSummary = summary.trim();
+
+    final token = await AuthService().getAccessToken();
+    bool serverSuccess = false;
+    String? serverError;
+    int? lastStatus;
+
+    if (token == null || token.isEmpty || token.startsWith('google_session_token_')) {
+      lastStatus = 401;
+      serverError = 'Bạn chưa đăng nhập hoặc phiên làm việc đã hết hạn.';
+    } else {
+      final endpoints = [
+        '${ApiConstants.baseUrl}/api/blogs/$idStr',
+        if (ApiConstants.baseUrl.contains(':5000')) '${ApiConstants.baseUrl.replaceAll(':5000', ':5021')}/api/blogs/$idStr',
+      ];
+
+      for (final endpoint in endpoints) {
+        try {
+          final uri = Uri.parse(endpoint);
+          final body = jsonEncode({
+            'title': finalTitle,
+            'excerpt': finalSummary,
+            'categoryId': categoryId ?? 13,
+            'category': category,
+            'coverImageUrl': coverUrl,
+            'contentJSON': content,
+            'readTimeMinutes': readTimeMinutes,
+            'status': status,
+          });
+
+          final headers = <String, String>{
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          };
+
+          final res = await http.put(uri, headers: headers, body: body).timeout(const Duration(seconds: 4));
+          lastStatus = res.statusCode;
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            serverSuccess = true;
+            break;
+          } else if (res.statusCode == 401) {
+            serverError = 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.';
+            break;
+          } else {
+            final decoded = _tryDecodeJson(res);
+            final msg = decoded?['message'] ?? decoded?['title'] ?? (res.body.isNotEmpty ? res.body : 'Lỗi từ máy chủ');
+            serverError = 'HTTP ${res.statusCode}: $msg';
+            break;
+          }
+        } catch (e) {
+          debugPrint('[BlogApiService] updateBlog attempt failed on $endpoint: $e');
+          serverError = 'Không thể kết nối đến máy chủ Backend: $e';
+        }
+      }
+    }
+
+    // Cập nhật trong Persistent Database
+    final localList = await getCreatedBlogs();
+    final existing = localList.firstWhere(
+      (b) => b.id == idStr || b.slug == idStr,
+      orElse: () {
+        final currentUser = AuthService().currentUser;
+        return BlogModel(
+          id: idStr,
+          slug: idStr,
+          title: finalTitle,
+          summary: finalSummary,
+          category: category,
+          categoryId: categoryId,
+          imageUrl: coverUrl,
+          author: BlogAuthorModel(name: currentUser?.fullName ?? 'Bạn', avatar: currentUser?.avatarUrl ?? ''),
+          publishedDate: 'Hôm nay',
+          readTimeMinutes: readTimeMinutes,
+          content: content,
+          featured: false,
+          status: status,
+        );
+      },
+    );
+
+    final updatedBlog = existing.copyWith(
+      title: finalTitle,
+      summary: finalSummary,
+      category: category,
+      categoryId: categoryId,
+      imageUrl: coverUrl.isNotEmpty ? coverUrl : existing.imageUrl,
+      content: content,
+      readTimeMinutes: readTimeMinutes,
+      status: status,
+    );
+    await _saveCreatedBlogToStorage(updatedBlog);
+
+    // Update in MockData
+    final idx = MockData.blogs.indexWhere((b) => b.id == idStr || b.slug == idStr);
+    if (idx != -1) {
+      MockData.blogs[idx] = updatedBlog;
+    } else {
+      MockData.blogs.insert(0, updatedBlog);
+    }
+
+    return BlogOperationResult(
+      success: true,
+      savedToRemoteDatabase: serverSuccess,
+      blogId: idStr,
+      message: serverSuccess ? 'Thành công' : (serverError ?? 'Không thể kết nối máy chủ API'),
+      statusCode: lastStatus,
+    );
+  }
+
+  /// Xóa bài viết hoặc bản nháp
+  Future<bool> deleteBlog(dynamic blogId) async {
+    final idStr = blogId.toString();
+    final candidateUrls = _getCandidateBaseUrls();
+    final token = await AuthService().getAccessToken();
+
+    for (final base in candidateUrls) {
+      for (final path in ['/api/blogs/$idStr', '/api/v1/blogs/$idStr']) {
+        try {
+          final uri = Uri.parse('$base$path');
+          final headers = <String, String>{
+            'Accept': 'application/json',
+          };
+          if (token != null && token.isNotEmpty) {
+            headers['Authorization'] = 'Bearer $token';
+          }
+
+          final res = await http.delete(uri, headers: headers).timeout(const Duration(seconds: 4));
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    await _deleteCreatedBlogFromStorage(idStr);
+    MockData.blogs.removeWhere((b) => b.id == idStr || b.slug == idStr);
     return true;
   }
 
@@ -572,26 +976,5 @@ class BlogApiService {
       'hậu giang', 'sóc trăng', 'bạc liêu', 'cà mau'
     ];
     return list.any((item) => prov.contains(item));
-  }
-
-  /// Lọc danh sách bài viết từ MockData
-  Future<List<BlogModel>> _filterLocalBlogs({
-    String? category,
-    String? keyword,
-    String? region,
-    String? province,
-  }) async {
-    final savedIds = await getSavedBlogIds();
-    final likedIds = await getLikedBlogIds();
-
-    final enriched = MockData.blogs.map((b) => _enrichBlog(b, likedIds, savedIds)).toList();
-
-    return filterBlogsList(
-      enriched,
-      category: category,
-      keyword: keyword,
-      region: region,
-      province: province,
-    );
   }
 }

@@ -97,57 +97,46 @@ class FriendApiService {
   Future<ApiResponse<FriendsResponseModel>> getFriends() async {
     try {
       final token = await AuthService().getAccessToken();
-      if (token != null && token.isNotEmpty && !token.startsWith('google_session_token_')) {
-        final endpoints = [
-          '${ApiConstants.baseUrl}/api/users/me/friends',
-          '${ApiConstants.baseUrl}/api/v1/users/me/friends',
-        ];
+      if (token == null || token.isEmpty) {
+        return const ApiResponse<FriendsResponseModel>(
+          success: true,
+          message: 'Chưa đăng nhập',
+          data: FriendsResponseModel(),
+        );
+      }
 
-        final headers = {
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/users/me/friends');
+      final res = await http.get(
+        uri,
+        headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
-        };
+        },
+      ).timeout(const Duration(seconds: 8));
 
-        for (final ep in endpoints) {
-          try {
-            final res = await http.get(Uri.parse(ep), headers: headers).timeout(const Duration(seconds: 4));
-            if (res.statusCode >= 200 && res.statusCode < 300) {
-              final json = _tryDecodeJson(res);
-              if (json != null) {
-                final dataJson = json['data'] ?? json;
-                if (dataJson is Map<String, dynamic>) {
-                  final model = FriendsResponseModel.fromJson(dataJson);
-                  return ApiResponse<FriendsResponseModel>(
-                    success: true,
-                    message: json['message'] as String? ?? 'Tải danh sách bạn bè thành công',
-                    data: model,
-                  );
-                }
-              }
-            }
-          } catch (_) {}
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final json = _tryDecodeJson(res);
+        if (json != null) {
+          final dataJson = json['data'] ?? json;
+          if (dataJson is Map<String, dynamic>) {
+            final model = FriendsResponseModel.fromJson(dataJson);
+            return ApiResponse<FriendsResponseModel>(
+              success: true,
+              message: json['message'] as String? ?? 'Tải danh sách bạn bè thành công',
+              data: model,
+            );
+          }
         }
       }
     } catch (e) {
       debugPrint('[FriendApiService] getFriends error: $e');
     }
 
-    // Fallback: Mock Data
-    final accepted = _mockFriends.where((f) => f.status == FriendshipStatus.accepted).toList();
-    final incoming = _mockFriends.where((f) => f.status == FriendshipStatus.pendingIncoming).toList();
-    final outgoing = _mockFriends.where((f) => f.status == FriendshipStatus.pendingOutgoing).toList();
-    final blocked = _mockFriends.where((f) => f.status == FriendshipStatus.blocked).toList();
-
-    return ApiResponse<FriendsResponseModel>(
+    return const ApiResponse<FriendsResponseModel>(
       success: true,
-      message: 'Tải danh sách bạn bè thành công',
-      data: FriendsResponseModel(
-        friends: accepted,
-        pendingRequestsReceived: incoming,
-        pendingRequestsSent: outgoing,
-        blockedUsers: blocked,
-      ),
+      message: 'Danh sách bạn bè trống',
+      data: FriendsResponseModel(),
     );
   }
 
@@ -169,81 +158,45 @@ class FriendApiService {
         headers['Authorization'] = 'Bearer $token';
       }
 
-      final uri = Uri.parse('${ApiConstants.baseUrl}/api/users/search').replace(
-        queryParameters: {'query': cleanQuery},
-      );
+      final endpoints = [
+        '${ApiConstants.baseUrl}/api/users/search',
+        '${ApiConstants.baseUrl}/api/friends/search',
+      ];
 
-      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 4));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final json = _tryDecodeJson(res);
-        if (json != null) {
-          final data = json['data'] ?? json;
-          if (data is List) {
-            final list = data.map((e) => FriendUser.fromJson(e as Map<String, dynamic>)).toList();
-            return ApiResponse<List<FriendUser>>(
-              success: true,
-              message: 'Tìm kiếm thành công',
-              data: list,
-            );
+      for (final ep in endpoints) {
+        try {
+          final uri = Uri.parse(ep).replace(
+            queryParameters: {
+              'q': cleanQuery,
+              'keyword': cleanQuery,
+            },
+          );
+
+          final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 6));
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            final json = _tryDecodeJson(res);
+            if (json != null) {
+              final data = json['data'] ?? json;
+              if (data is List) {
+                final list = data.map((e) => FriendUser.fromJson(e as Map<String, dynamic>)).toList();
+                return ApiResponse<List<FriendUser>>(
+                  success: true,
+                  message: 'Tìm kiếm thành công',
+                  data: list,
+                );
+              }
+            }
           }
-        }
+        } catch (_) {}
       }
     } catch (e) {
       debugPrint('[FriendApiService] searchUsers error: $e');
     }
 
-    // Fallback: Tìm trong Mock Data + danh sách gợi ý mẫu
-    final mockSearchUniverse = [
-      ..._mockFriends,
-      const FriendUser(
-        id: 10,
-        fullName: 'Phạm Minh Đức',
-        email: 'duc.pham@travel.vn',
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&fit=crop',
-        coverUrl: 'https://images.unsplash.com/photo-1528127269322-539801943592?w=800&fit=crop',
-        bio: 'Khám phá ẩm thực đường phố Hà Nội và các danh thắng phía Bắc',
-        rankLevel: 'Thành viên mới',
-        reputationScore: 110,
-        mutualFriendsCount: 1,
-        status: FriendshipStatus.suggestion,
-      ),
-      const FriendUser(
-        id: 11,
-        fullName: 'Trương Mỹ Linh',
-        email: 'mylinh.nhatrang@gmail.com',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&fit=crop',
-        coverUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&fit=crop',
-        bio: 'Reviewer du lịch biển đảo Nha Trang - Phú Quốc',
-        rankLevel: 'Thổ địa Nha Trang',
-        reputationScore: 450,
-        mutualFriendsCount: 4,
-        status: FriendshipStatus.suggestion,
-      ),
-      const FriendUser(
-        id: 12,
-        fullName: 'Lê Duy Bách',
-        email: 'duybach.quynhon@gmail.com',
-        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&fit=crop',
-        coverUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=800&fit=crop',
-        bio: 'Thích cắm trại và ngắm bình minh Eo Gió Quy Nhơn',
-        rankLevel: 'Thổ địa Quy Nhơn',
-        reputationScore: 360,
-        mutualFriendsCount: 2,
-        status: FriendshipStatus.suggestion,
-      ),
-    ];
-
-    final q = cleanQuery.toLowerCase().replaceAll('#', '');
-    final filtered = mockSearchUniverse.where((u) {
-      return u.fullName.toLowerCase().contains(q) ||
-          u.email.toLowerCase().contains(q) ||
-          u.id.toString() == q;
-    }).toList();
-
-    return ApiResponse<List<FriendUser>>(
+    return const ApiResponse<List<FriendUser>>(
       success: true,
-      message: 'Tìm kiếm thành công',
-      data: filtered,
+      message: 'Không tìm thấy người dùng phù hợp',
+      data: [],
     );
   }
 
@@ -251,117 +204,155 @@ class FriendApiService {
   Future<ApiResponse<bool>> sendFriendRequest(int targetUserId) async {
     try {
       final token = await AuthService().getAccessToken();
-      if (token != null && token.isNotEmpty && !token.startsWith('google_session_token_')) {
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/friends/request/$targetUserId');
-        final res = await http.post(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({}),
-        ).timeout(const Duration(seconds: 4));
+      if (token == null || token.isEmpty) {
+        return const ApiResponse<bool>(
+          success: false,
+          message: 'Bạn cần đăng nhập để gửi lời mời kết bạn',
+          data: false,
+        );
+      }
 
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          _updateMockStatus(targetUserId, FriendshipStatus.pendingOutgoing);
-          return const ApiResponse<bool>(
-            success: true,
-            message: 'Đã gửi lời mời kết bạn',
-            data: true,
-          );
-        }
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/friends/request');
+      final res = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'targetUserId': targetUserId}),
+      ).timeout(const Duration(seconds: 8));
+
+      final bodyStr = utf8.decode(res.bodyBytes).trim();
+      final json = bodyStr.isNotEmpty ? jsonDecode(bodyStr) as Map<String, dynamic> : <String, dynamic>{};
+
+      if (res.statusCode >= 200 && res.statusCode < 300 && json['success'] == true) {
+        _updateMockStatus(targetUserId, FriendshipStatus.pendingOutgoing);
+        return ApiResponse<bool>(
+          success: true,
+          message: json['message'] as String? ?? 'Đã gửi lời mời kết bạn thành công',
+          data: true,
+        );
+      } else {
+        final errorMsg = json['message']?.toString() ?? 'Không thể gửi lời mời kết bạn.';
+        return ApiResponse<bool>(
+          success: false,
+          message: errorMsg,
+          data: false,
+        );
       }
     } catch (e) {
       debugPrint('[FriendApiService] sendFriendRequest error: $e');
+      return ApiResponse<bool>(
+        success: false,
+        message: 'Lỗi kết nối máy chủ: $e',
+        data: false,
+      );
     }
-
-    _updateMockStatus(targetUserId, FriendshipStatus.pendingOutgoing);
-    return const ApiResponse<bool>(
-      success: true,
-      message: 'Đã gửi lời mời kết bạn',
-      data: true,
-    );
   }
 
   /// Phản hồi lời mời kết bạn (accept / reject)
   Future<ApiResponse<bool>> respondFriendRequest(int targetUserId, String action) async {
     try {
       final token = await AuthService().getAccessToken();
-      if (token != null && token.isNotEmpty && !token.startsWith('google_session_token_')) {
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/friends/respond/$targetUserId');
-        final res = await http.put(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode({'action': action}),
-        ).timeout(const Duration(seconds: 4));
+      if (token == null || token.isEmpty) {
+        return const ApiResponse<bool>(
+          success: false,
+          message: 'Bạn cần đăng nhập để thực hiện thao tác',
+          data: false,
+        );
+      }
 
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          if (action == 'accept') {
-            _updateMockStatus(targetUserId, FriendshipStatus.accepted);
-          } else {
-            _removeMockUser(targetUserId);
-          }
-          return ApiResponse<bool>(
-            success: true,
-            message: action == 'accept' ? 'Đã chấp nhận lời mời' : 'Đã từ chối lời mời',
-            data: true,
-          );
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/friends/respond/$targetUserId');
+      final res = await http.put(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'action': action}),
+      ).timeout(const Duration(seconds: 8));
+
+      final bodyStr = utf8.decode(res.bodyBytes).trim();
+      final json = bodyStr.isNotEmpty ? jsonDecode(bodyStr) as Map<String, dynamic> : <String, dynamic>{};
+
+      if (res.statusCode >= 200 && res.statusCode < 300 && json['success'] == true) {
+        if (action == 'accept') {
+          _updateMockStatus(targetUserId, FriendshipStatus.accepted);
+        } else {
+          _removeMockUser(targetUserId);
         }
+        return ApiResponse<bool>(
+          success: true,
+          message: json['message'] as String? ?? (action == 'accept' ? 'Đã chấp nhận lời mời kết bạn' : 'Đã từ chối lời mời kết bạn'),
+          data: true,
+        );
+      } else {
+        final errorMsg = json['message']?.toString() ?? 'Không thể phản hồi lời mời kết bạn.';
+        return ApiResponse<bool>(
+          success: false,
+          message: errorMsg,
+          data: false,
+        );
       }
     } catch (e) {
       debugPrint('[FriendApiService] respondFriendRequest error: $e');
+      return ApiResponse<bool>(
+        success: false,
+        message: 'Lỗi kết nối máy chủ: $e',
+        data: false,
+      );
     }
-
-    if (action == 'accept') {
-      _updateMockStatus(targetUserId, FriendshipStatus.accepted);
-    } else {
-      _removeMockUser(targetUserId);
-    }
-    return ApiResponse<bool>(
-      success: true,
-      message: action == 'accept' ? 'Đã chấp nhận lời mời kết bạn' : 'Đã xóa lời mời kết bạn',
-      data: true,
-    );
   }
 
   /// Hủy kết bạn hoặc hủy lời mời kết bạn đã gửi
   Future<ApiResponse<bool>> unfriend(int targetUserId) async {
     try {
       final token = await AuthService().getAccessToken();
-      if (token != null && token.isNotEmpty && !token.startsWith('google_session_token_')) {
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/friends/$targetUserId');
-        final res = await http.delete(
-          uri,
-          headers: {
-            'Accept': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-        ).timeout(const Duration(seconds: 4));
+      if (token == null || token.isEmpty) {
+        return const ApiResponse<bool>(
+          success: false,
+          message: 'Bạn cần đăng nhập để thực hiện thao tác',
+          data: false,
+        );
+      }
 
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          _removeMockUser(targetUserId);
-          return const ApiResponse<bool>(
-            success: true,
-            message: 'Đã hủy kết bạn thành công',
-            data: true,
-          );
-        }
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/friends/$targetUserId');
+      final res = await http.delete(
+        uri,
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 8));
+
+      final bodyStr = utf8.decode(res.bodyBytes).trim();
+      final json = bodyStr.isNotEmpty ? jsonDecode(bodyStr) as Map<String, dynamic> : <String, dynamic>{};
+
+      if (res.statusCode >= 200 && res.statusCode < 300 && json['success'] == true) {
+        _removeMockUser(targetUserId);
+        return ApiResponse<bool>(
+          success: true,
+          message: json['message'] as String? ?? 'Đã hủy kết bạn thành công',
+          data: true,
+        );
+      } else {
+        final errorMsg = json['message']?.toString() ?? 'Không thể hủy kết bạn.';
+        return ApiResponse<bool>(
+          success: false,
+          message: errorMsg,
+          data: false,
+        );
       }
     } catch (e) {
       debugPrint('[FriendApiService] unfriend error: $e');
+      return ApiResponse<bool>(
+        success: false,
+        message: 'Lỗi kết nối máy chủ: $e',
+        data: false,
+      );
     }
-
-    _removeMockUser(targetUserId);
-    return const ApiResponse<bool>(
-      success: true,
-      message: 'Đã hủy kết bạn thành công',
-      data: true,
-    );
   }
 
   // ===== Local Mock Updaters =====

@@ -1,28 +1,91 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/itinerary_model.dart';
 
-class ItineraryBudgetSheet extends StatelessWidget {
+class ItineraryBudgetSheet extends StatefulWidget {
   final ItineraryModel itinerary;
+  final ValueChanged<double>? onBudgetChanged;
 
   const ItineraryBudgetSheet({
     super.key,
     required this.itinerary,
+    this.onBudgetChanged,
   });
 
-  static void show(BuildContext context, {required ItineraryModel itinerary}) {
+  static void show(
+    BuildContext context, {
+    required ItineraryModel itinerary,
+    ValueChanged<double>? onBudgetChanged,
+  }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => ItineraryBudgetSheet(itinerary: itinerary),
+      builder: (context) => ItineraryBudgetSheet(
+        itinerary: itinerary,
+        onBudgetChanged: onBudgetChanged,
+      ),
+    );
+  }
+
+  @override
+  State<ItineraryBudgetSheet> createState() => _ItineraryBudgetSheetState();
+}
+
+class _ItineraryBudgetSheetState extends State<ItineraryBudgetSheet> {
+  late double _budgetTarget;
+  bool _isEditingBudget = false;
+  late TextEditingController _customBudgetController;
+
+  static const List<double> _budgetPresets = [
+    3000000,
+    5000000,
+    8000000,
+    10000000,
+    15000000,
+    20000000,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final totalCost = widget.itinerary.calculatedTotalCost;
+    _budgetTarget = widget.itinerary.budgetTarget ?? (totalCost > 0 ? totalCost * 1.15 : 5000000);
+    _customBudgetController = TextEditingController(text: _budgetTarget.toInt().toString());
+  }
+
+  @override
+  void dispose() {
+    _customBudgetController.dispose();
+    super.dispose();
+  }
+
+  void _applyBudget(double newBudget) {
+    setState(() {
+      _budgetTarget = newBudget;
+      _isEditingBudget = false;
+    });
+    widget.onBudgetChanged?.call(newBudget);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Đã cập nhật mục tiêu ngân sách: ${(newBudget / 1000000).toStringAsFixed(1)} triệu đ!',
+        ),
+        backgroundColor: const Color(0xFF065F46),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final itinerary = widget.itinerary;
     final totalCost = itinerary.calculatedTotalCost;
-    final budgetTarget = itinerary.budgetTarget ?? (totalCost * 1.15);
+    final budgetTarget = _budgetTarget;
     final ratio = budgetTarget > 0 ? (totalCost / budgetTarget).clamp(0.0, 1.0) : 1.0;
+    final percentUsed = budgetTarget > 0 ? ((totalCost / budgetTarget) * 100).round() : 0;
+    final isOverBudget = totalCost > budgetTarget;
 
     // Calculate categories breakdown roughly
     double travelCost = 0;
@@ -57,7 +120,7 @@ class ItineraryBudgetSheet extends StatelessWidget {
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
       ),
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -88,7 +151,7 @@ class ItineraryBudgetSheet extends StatelessWidget {
                     Icon(Icons.account_balance_wallet_rounded, color: Color(0xFF059669), size: 22),
                     SizedBox(width: 8),
                     Text(
-                      'Dự toán & Quản lý Ngân sách',
+                      'Dự toán & Ngân sách Chuyến đi',
                       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF111827)),
                     ),
                   ],
@@ -114,15 +177,17 @@ class ItineraryBudgetSheet extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF064E3B), Color(0xFF047857)],
+                      gradient: LinearGradient(
+                        colors: isOverBudget
+                            ? [const Color(0xFF991B1B), const Color(0xFFDC2626)]
+                            : [const Color(0xFF064E3B), const Color(0xFF047857)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF047857).withValues(alpha: 0.3),
+                          color: (isOverBudget ? const Color(0xFFDC2626) : const Color(0xFF047857)).withValues(alpha: 0.3),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -134,9 +199,9 @@ class ItineraryBudgetSheet extends StatelessWidget {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'TỔNG CHI PHÍ DỰ KIẾN',
-                              style: TextStyle(color: Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                            Text(
+                              isOverBudget ? 'VƯỢT NGÂN SÁCH DỰ KIẾN' : 'TỔNG CHI PHÍ DỰ KIẾN',
+                              style: const TextStyle(color: Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5),
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
@@ -145,7 +210,7 @@ class ItineraryBudgetSheet extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
-                                '${(ratio * 100).toInt()}% ngân sách',
+                                '$percentUsed% ngân sách',
                                 style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
                               ),
                             ),
@@ -165,7 +230,7 @@ class ItineraryBudgetSheet extends StatelessWidget {
                             value: ratio,
                             minHeight: 6,
                             backgroundColor: Colors.white.withValues(alpha: 0.2),
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF34D399)),
+                            valueColor: AlwaysStoppedAnimation<Color>(isOverBudget ? const Color(0xFFFCA5A5) : const Color(0xFF34D399)),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -183,6 +248,110 @@ class ItineraryBudgetSheet extends StatelessWidget {
                             ),
                           ],
                         ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // Preset Budget Selector matching Share_Locations
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Chọn mức ngân sách dự kiến',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                            ),
+                            InkWell(
+                              onTap: () {
+                                setState(() => _isEditingBudget = !_isEditingBudget);
+                              },
+                              child: Text(
+                                _isEditingBudget ? 'Đóng nhập tay' : 'Nhập số tiền khác',
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF059669)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Preset buttons (3tr, 5tr, 8tr, 10tr, 15tr, 20tr)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _budgetPresets.map((preset) {
+                            final isSelected = (_budgetTarget - preset).abs() < 1000;
+                            final label = '${(preset / 1000000).toInt()} triệu';
+                            return InkWell(
+                              onTap: () => _applyBudget(preset),
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? const Color(0xFF065F46) : Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSelected ? const Color(0xFF065F46) : const Color(0xFFCBD5E1),
+                                  ),
+                                ),
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isSelected ? Colors.white : const Color(0xFF334155),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+
+                        if (_isEditingBudget) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _customBudgetController,
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    labelText: 'Mục tiêu ngân sách (VNĐ)',
+                                    labelStyle: const TextStyle(fontSize: 12),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                    isDense: true,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton(
+                                onPressed: () {
+                                  final cleanText = _customBudgetController.text.replaceAll(RegExp(r'\D'), '');
+                                  final parsed = double.tryParse(cleanText) ?? 5000000;
+                                  _applyBudget(parsed);
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF065F46),
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                                ),
+                                child: const Text('Lưu', style: TextStyle(fontWeight: FontWeight.w800)),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),

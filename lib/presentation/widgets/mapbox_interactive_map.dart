@@ -126,9 +126,9 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
       return;
     }
 
-    final maxDim = math.max(latDiff * 1.2, lngDiff * 1.2);
-    double targetZoom = (math.log(360 / maxDim) / math.ln2) - 1.2;
-    targetZoom = targetZoom.clamp(4.0, 18.0);
+    final maxDim = math.max(latDiff * 1.3, lngDiff * 1.3);
+    double targetZoom = (math.log(360 / maxDim) / math.ln2) - 1.0;
+    targetZoom = targetZoom.clamp(3.2, 18.0);
 
     flyTo(centerLat, centerLng, targetZoom, 600);
   }
@@ -223,19 +223,24 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
     required double screenHeight,
     required bool isUnderlay,
   }) {
-    if (level < 2 || level > 20) return const [];
+    if (level < 1 || level > 20) return const [];
+    if (screenWidth <= 0 || screenHeight <= 0) return const [];
+
     final double scaleDiff = math.pow(2.0, currentZoom - level).toDouble();
+    if (scaleDiff <= 0 || scaleDiff.isNaN || scaleDiff.isInfinite) return const [];
+
     final centerPixel = latLngToPixel(centerLat, centerLng, level.toDouble());
 
-    final minScreenX = centerPixel.x - (screenWidth / 2) / scaleDiff;
-    final maxScreenX = centerPixel.x + (screenWidth / 2) / scaleDiff;
-    final minScreenY = centerPixel.y - (screenHeight / 2) / scaleDiff;
-    final maxScreenY = centerPixel.y + (screenHeight / 2) / scaleDiff;
+    final int centerTileX = (centerPixel.x / tileSize).floor();
+    final int centerTileY = (centerPixel.y / tileSize).floor();
 
-    final int minTileX = (minScreenX / tileSize).floor() - 1;
-    final int maxTileX = (maxScreenX / tileSize).floor() + 1;
-    final int minTileY = (minScreenY / tileSize).floor() - 1;
-    final int maxTileY = (maxScreenY / tileSize).floor() + 1;
+    final int radiusX = math.max(1, math.min(4, ((screenWidth / 2) / (tileSize * scaleDiff)).ceil() + 1));
+    final int radiusY = math.max(1, math.min(4, ((screenHeight / 2) / (tileSize * scaleDiff)).ceil() + 1));
+
+    final int minTileX = centerTileX - radiusX;
+    final int maxTileX = centerTileX + radiusX;
+    final int minTileY = centerTileY - radiusY;
+    final int maxTileY = centerTileY + radiusY;
 
     final maxTilesAtLevel = 1 << level;
     final List<Widget> widgets = [];
@@ -257,6 +262,7 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
 
         widgets.add(
           Positioned(
+            key: ValueKey('${isUnderlay ? "underlay_" : "tile_"}${level}_${tx}_$ty'),
             left: screenPosX,
             top: screenPosY,
             width: renderedTileSize + 0.6,
@@ -287,9 +293,10 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
         final screenHeight = constraints.maxHeight;
 
         final int intZoom = _zoom.floor().clamp(2, 20);
+        final bool isZoomTransition = (_zoom - intZoom).abs() > 0.08;
 
-        // 1. Underlay tiles from parent zoom (prevents any blank/white flashing during zoom)
-        final List<Widget> underlayTiles = (intZoom > 2)
+        // 1. Underlay tiles from parent zoom (rendered only during zoom transitions to prevent lag)
+        final List<Widget> underlayTiles = (intZoom > 2 && isZoomTransition)
             ? _buildTilesForZoomLevel(
                 level: intZoom - 1,
                 currentZoom: _zoom,
@@ -351,20 +358,29 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
             child: Stack(
               clipBehavior: Clip.hardEdge,
               children: [
-                // 1. Dynamic Infinite Mapbox Tiles Layer (Underlay + Current Zoom)
-                ...underlayTiles,
-                ...currentTiles,
+                // 1. Dynamic Infinite Mapbox Tiles Layer (RepaintBoundary for isolated rendering)
+                RepaintBoundary(
+                  child: Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      ...underlayTiles,
+                      ...currentTiles,
+                    ],
+                  ),
+                ),
 
                 // 2. Google Maps Style Polyline Route Overlay
                 if (widget.routeCoordinates != null && widget.routeCoordinates!.isNotEmpty)
                   Positioned.fill(
-                    child: CustomPaint(
-                      painter: _RoutePolylinePainter(
-                        routeCoordinates: widget.routeCoordinates!,
-                        centerLat: _centerLat,
-                        centerLng: _centerLng,
-                        zoom: _zoom,
-                        screenSize: Size(screenWidth, screenHeight),
+                    child: RepaintBoundary(
+                      child: CustomPaint(
+                        painter: _RoutePolylinePainter(
+                          routeCoordinates: widget.routeCoordinates!,
+                          centerLat: _centerLat,
+                          centerLng: _centerLng,
+                          zoom: _zoom,
+                          screenSize: Size(screenWidth, screenHeight),
+                        ),
                       ),
                     ),
                   ),
@@ -372,6 +388,7 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
                 // 3. Start Pin (A / Current Location)
                 if (widget.originLat != null && widget.originLng != null)
                   _buildMapMarker(
+                    key: const ValueKey('start_marker_pin'),
                     lat: widget.originLat!,
                     lng: widget.originLng!,
                     centerLat: _centerLat,
@@ -384,6 +401,7 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
                 // 4. Destination Pin (B)
                 if (widget.destLat != null && widget.destLng != null)
                   _buildMapMarker(
+                    key: const ValueKey('dest_marker_pin'),
                     lat: widget.destLat!,
                     lng: widget.destLng!,
                     centerLat: _centerLat,
@@ -407,23 +425,30 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
                     screenSize: Size(screenWidth, screenHeight),
                   ),
 
-                // 6. Custom Interactive Place Markers Layer
+                // 6. Custom Interactive Place Markers Layer (Wrapped in RepaintBoundary)
                 if (widget.customMarkers != null && widget.customMarkers!.isNotEmpty)
-                  for (final marker in widget.customMarkers!)
-                    _buildMapMarker(
-                      lat: marker.latitude,
-                      lng: marker.longitude,
-                      centerLat: _centerLat,
-                      centerLng: _centerLng,
-                      zoom: _zoom,
-                      screenSize: Size(screenWidth, screenHeight),
-                      alignmentOffset: marker.alignmentOffset,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: marker.onTap,
-                        child: marker.child,
-                      ),
+                  RepaintBoundary(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: widget.customMarkers!.map((marker) {
+                        return _buildMapMarker(
+                          key: ValueKey('custom_marker_${marker.id}'),
+                          lat: marker.latitude,
+                          lng: marker.longitude,
+                          centerLat: _centerLat,
+                          centerLng: _centerLng,
+                          zoom: _zoom,
+                          screenSize: Size(screenWidth, screenHeight),
+                          alignmentOffset: marker.alignmentOffset,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: marker.onTap,
+                            child: marker.child,
+                          ),
+                        );
+                      }).toList(),
                     ),
+                  ),
 
                 // 7. Floating Zoom Controls (+ / -)
                 if (widget.showZoomControls)
@@ -485,6 +510,7 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
   }
 
   Widget _buildMapMarker({
+    Key? key,
     required double lat,
     required double lng,
     required double centerLat,
@@ -494,17 +520,14 @@ class MapboxInteractiveMapState extends State<MapboxInteractiveMap>
     required Widget child,
     Offset alignmentOffset = const Offset(-0.5, -1.0),
   }) {
-    final int intZoom = zoom.floor().clamp(0, 20);
-    final double zoomFraction = zoom - intZoom;
-    final double tileScale = math.pow(2.0, zoomFraction).toDouble();
+    final centerPixel = latLngToPixel(centerLat, centerLng, zoom);
+    final markerPixel = latLngToPixel(lat, lng, zoom);
 
-    final centerPixel = latLngToPixel(centerLat, centerLng, intZoom.toDouble());
-    final markerPixel = latLngToPixel(lat, lng, intZoom.toDouble());
-
-    final double screenX = (screenSize.width / 2) + (markerPixel.x - centerPixel.x) * tileScale;
-    final double screenY = (screenSize.height / 2) + (markerPixel.y - centerPixel.y) * tileScale;
+    final double screenX = (screenSize.width / 2) + (markerPixel.x - centerPixel.x);
+    final double screenY = (screenSize.height / 2) + (markerPixel.y - centerPixel.y);
 
     return Positioned(
+      key: key ?? ValueKey('marker_${lat}_$lng'),
       left: screenX,
       top: screenY,
       child: FractionalTranslation(
@@ -691,11 +714,7 @@ class _RoutePolylinePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (routeCoordinates.length < 2) return;
 
-    final int intZoom = zoom.floor().clamp(0, 20);
-    final double zoomFraction = zoom - intZoom;
-    final double tileScale = math.pow(2.0, zoomFraction).toDouble();
-
-    final centerPixel = MapboxInteractiveMapState.latLngToPixel(centerLat, centerLng, intZoom.toDouble());
+    final centerPixel = MapboxInteractiveMapState.latLngToPixel(centerLat, centerLng, zoom);
 
     final path = Path();
     bool first = true;
@@ -704,9 +723,9 @@ class _RoutePolylinePainter extends CustomPainter {
       final lng = coord[0];
       final lat = coord[1];
 
-      final pixel = MapboxInteractiveMapState.latLngToPixel(lat, lng, intZoom.toDouble());
-      final screenX = (screenSize.width / 2) + (pixel.x - centerPixel.x) * tileScale;
-      final screenY = (screenSize.height / 2) + (pixel.y - centerPixel.y) * tileScale;
+      final pixel = MapboxInteractiveMapState.latLngToPixel(lat, lng, zoom);
+      final screenX = (screenSize.width / 2) + (pixel.x - centerPixel.x);
+      final screenY = (screenSize.height / 2) + (pixel.y - centerPixel.y);
 
       if (first) {
         path.moveTo(screenX, screenY);
@@ -719,7 +738,7 @@ class _RoutePolylinePainter extends CustomPainter {
     // 1. Route Outer Border (Dark blue shadow for high contrast)
     final borderPaint = Paint()
       ..color = const Color(0xFF1E3A8A)
-      ..strokeWidth = 9.0
+      ..strokeWidth = 8.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -728,7 +747,7 @@ class _RoutePolylinePainter extends CustomPainter {
     // 2. Route Main Polyline (Google Maps vibrant blue #2563EB)
     final linePaint = Paint()
       ..color = const Color(0xFF2563EB)
-      ..strokeWidth = 6.0
+      ..strokeWidth = 5.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
@@ -736,7 +755,7 @@ class _RoutePolylinePainter extends CustomPainter {
 
     // 3. Route Inner Highlight (Light blue inner glow)
     final innerPaint = Paint()
-      ..color = const Color(0xFF60A5FA).withValues(alpha: 0.6)
+      ..color = const Color(0xFF93C5FD).withValues(alpha: 0.8)
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round

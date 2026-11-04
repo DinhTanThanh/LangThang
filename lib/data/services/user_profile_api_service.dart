@@ -6,6 +6,7 @@ import '../../core/constants/api_constants.dart';
 import '../models/api_response.dart';
 import '../models/user_profile_data_models.dart';
 import 'auth_service.dart';
+import 'blog_api_service.dart';
 
 class UserProfileApiService {
   static final UserProfileApiService _instance = UserProfileApiService._internal();
@@ -98,7 +99,11 @@ class UserProfileApiService {
     }
   }
 
-  static const String _localVisitLogsKey = 'user_all_visit_logs_cache_v2';
+  static const String _localVisitLogsBaseKey = 'user_all_visit_logs_cache_v2';
+
+  Future<String> _getLocalVisitLogsKey() async {
+    return await AuthService().getScopedKey(_localVisitLogsBaseKey);
+  }
 
   // ==================== 1. VISIT LOGS ====================
 
@@ -158,7 +163,8 @@ class UserProfileApiService {
     required int placeId,
     required String visitedDate,
     int privacy = 1,
-    String? notes,
+    String? note,
+    int? rating,
     String? placeName,
     String? province,
     String? category,
@@ -175,51 +181,93 @@ class UserProfileApiService {
       category: category ?? 'Khám phá',
       visitedDate: visitedDate,
       privacy: privacy,
+      note: note,
+      rating: rating,
       coverImg: coverImg ?? '',
       lat: lat,
       lng: lng,
       createdAt: DateTime.now().toIso8601String(),
     );
 
-    await _saveVisitLogToLocal(fallbackItem);
+    final token = await AuthService().getAccessToken();
+    if (token == null || token.isEmpty || token.startsWith('google_session_token_')) {
+      return ApiResponse<VisitLogItemModel>(
+        success: false,
+        message: 'Vui lòng đăng nhập để lưu ghi nhận điểm đến vào hệ thống.',
+      );
+    }
 
     try {
-      final token = await AuthService().getAccessToken();
-      if (token != null && token.isNotEmpty && !token.startsWith('google_session_token_')) {
-        final headers = {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        };
-        final body = jsonEncode({
-          'placeId': placeId,
-          'visitedDate': visitedDate,
-          'privacy': privacy,
-          'notes': notes,
-        });
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      };
+      final body = jsonEncode({
+        'placeId': placeId,
+        'visitedDate': visitedDate,
+        'privacy': privacy,
+        'note': note,
+        'notes': note,
+        'rating': rating,
+      });
 
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/v1/users/me/visit-logs');
-        final res = await http.post(uri, headers: headers, body: body).timeout(const Duration(seconds: 4));
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final json = _tryDecodeJson(res);
-          if (json != null && json['data'] != null) {
-            final item = VisitLogItemModel.fromJson(json['data'] as Map<String, dynamic>);
-            await _saveVisitLogToLocal(item);
-            return ApiResponse<VisitLogItemModel>(success: true, message: 'OK', data: item);
-          }
+      final uri = Uri.parse('${ApiConstants.baseUrl}/api/users/me/visit-logs');
+      debugPrint('[UserProfileApiService] Calling createVisitLog: $uri with body: $body');
+      final res = await http.post(uri, headers: headers, body: body).timeout(const Duration(seconds: 8));
+      debugPrint('[UserProfileApiService] createVisitLog status: ${res.statusCode} - ${res.body}');
+
+      final json = _tryDecodeJson(res);
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        if (json != null && json['data'] != null) {
+          final item = VisitLogItemModel.fromJson(json['data'] as Map<String, dynamic>);
+          await _saveVisitLogToLocal(item);
+          return ApiResponse<VisitLogItemModel>(
+            success: true,
+            message: json['message']?.toString() ?? 'Đã ghi nhận điểm đến vào cơ sở dữ liệu thành công.',
+            data: item,
+          );
         }
+      } else if (res.statusCode == 401) {
+        return const ApiResponse<VisitLogItemModel>(
+          success: false,
+          code: '401',
+          message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+        );
+      } else {
+        final errorMsg = json?['message']?.toString() ?? 'Không thể ghi nhận điểm đến (mã ${res.statusCode}).';
+        return ApiResponse<VisitLogItemModel>(
+          success: false,
+          code: res.statusCode.toString(),
+          message: errorMsg,
+        );
       }
     } catch (e) {
       debugPrint('[UserProfileApiService] createVisitLog error: $e');
+      return ApiResponse<VisitLogItemModel>(
+        success: false,
+        message: 'Lỗi kết nối đến máy chủ: $e',
+      );
     }
-    return ApiResponse<VisitLogItemModel>(success: true, message: 'Đã lưu nhật ký', data: fallbackItem);
+    return ApiResponse<VisitLogItemModel>(success: true, message: 'Đã ghi nhận điểm đến vào nhật ký.', data: fallbackItem);
   }
 
-  Future<ApiResponse<bool>> updateVisitLog(int id, {required String visitedDate, required int privacy}) async {
+  Future<ApiResponse<bool>> updateVisitLog(
+    int id, {
+    required String visitedDate,
+    required int privacy,
+    String? note,
+    int? rating,
+  }) async {
     final list = await _getLocalVisitLogs();
     final idx = list.indexWhere((l) => l.id == id);
     if (idx != -1) {
-      list[idx] = list[idx].copyWith(visitedDate: visitedDate, privacy: privacy);
+      list[idx] = list[idx].copyWith(
+        visitedDate: visitedDate,
+        privacy: privacy,
+        note: note,
+        rating: rating,
+      );
       await _cacheVisitLogs(list);
     }
 
@@ -234,13 +282,16 @@ class UserProfileApiService {
         final body = jsonEncode({
           'visitedDate': visitedDate,
           'privacy': privacy,
+          'note': note,
+          'notes': note,
+          'rating': rating,
         });
 
-        final uri1 = Uri.parse('${ApiConstants.baseUrl}/api/v1/users/me/visit-logs/$id');
-        final res = await http.put(uri1, headers: headers, body: body).timeout(const Duration(seconds: 4));
+        final uri1 = Uri.parse('${ApiConstants.baseUrl}/api/users/me/visit-logs/$id');
+        final res = await http.put(uri1, headers: headers, body: body).timeout(const Duration(seconds: 8));
         if (res.statusCode == 404) {
-          final uri2 = Uri.parse('${ApiConstants.baseUrl}/api/users/me/visit-logs/$id');
-          await http.put(uri2, headers: headers, body: body).timeout(const Duration(seconds: 4));
+          final uri2 = Uri.parse('${ApiConstants.baseUrl}/api/v1/users/me/visit-logs/$id');
+          await http.put(uri2, headers: headers, body: body).timeout(const Duration(seconds: 8));
         }
       }
     } catch (e) {
@@ -298,8 +349,9 @@ class UserProfileApiService {
 
   Future<List<VisitLogItemModel>> _getLocalVisitLogs() async {
     try {
+      final key = await _getLocalVisitLogsKey();
       final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString(_localVisitLogsKey);
+      final jsonStr = prefs.getString(key);
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final list = jsonDecode(jsonStr) as List;
         return list.map((item) => VisitLogItemModel.fromJson(item as Map<String, dynamic>)).toList();
@@ -310,9 +362,10 @@ class UserProfileApiService {
 
   Future<void> _cacheVisitLogs(List<VisitLogItemModel> items) async {
     try {
+      final key = await _getLocalVisitLogsKey();
       final prefs = await SharedPreferences.getInstance();
       final jsonStr = jsonEncode(items.map((i) => i.toJson()).toList());
-      await prefs.setString(_localVisitLogsKey, jsonStr);
+      await prefs.setString(key, jsonStr);
     } catch (_) {}
   }
 
@@ -380,6 +433,50 @@ class UserProfileApiService {
   // ==================== 3. COMMENTS ====================
 
   Future<ApiResponse<List<UserCommentItemModel>>> getMyComments({int page = 1, int pageSize = 50}) async {
+    final defaultComments = [
+      const UserCommentItemModel(
+        id: 101,
+        reviewId: 1,
+        placeId: 1,
+        placeName: 'Đà Lạt - Rừng thông & Đồi chè Cầu Đất',
+        placeThumb: 'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?w=600&h=350&fit=crop',
+        content: 'cam n nha, không khí và cảnh đẹp ở đây chụp hình check-in rất thích!',
+        parentAuthor: 'Lê Hoàng Phúc',
+        createdAt: 'Vừa xong',
+        targetType: 'review',
+        targetTitle: 'Đánh giá: Đà Lạt mùa hoa và sương sớm',
+        targetImageUrl: 'https://images.unsplash.com/photo-1516483638261-f4dbaf036963?w=600&h=350&fit=crop',
+        targetSummary: 'Không khí trong lành mát lạnh sảng khoái vô cùng. Các góc chụp ảnh check-in đều đẹp xuất sắc như tranh vẽ...',
+      ),
+      const UserCommentItemModel(
+        id: 102,
+        reviewId: 2,
+        placeId: 2,
+        placeName: 'Cầu Rồng & Sông Hàn Đà Nẵng',
+        placeThumb: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=600&h=350&fit=crop',
+        content: 'Nên đi vào khoảng 20:30 cuối tuần để chọn được vị trí đẹp ngắm cầu phun lửa và nước nhé!',
+        parentAuthor: 'Nguyễn Văn Minh',
+        createdAt: 'Hôm qua',
+        targetType: 'place',
+        targetTitle: 'Khám phá Cầu Rồng lung linh về đêm',
+        targetImageUrl: 'https://images.unsplash.com/photo-1559592413-7cec4d0cae2b?w=600&h=350&fit=crop',
+        targetSummary: 'Biểu tượng du lịch hiện đại và đặc sắc của thành phố đáng sống Đà Nẵng.',
+      ),
+      const UserCommentItemModel(
+        id: 103,
+        placeId: 3,
+        placeName: 'Cẩm nang phượt Hà Giang mùa hoa tam giác mạch',
+        placeThumb: 'https://images.unsplash.com/photo-1528127269322-539801943592?w=600&h=350&fit=crop',
+        content: 'Cảm ơn tác giả đã chia sẻ lịch trình chi tiết và kinh nghiệm qua các khúc cua tay áo hiểm trở!',
+        parentAuthor: 'Trần Hương Ly',
+        createdAt: '3 ngày trước',
+        targetType: 'blog',
+        targetTitle: 'Kinh nghiệm phượt Mã Pí Lèng và Sông Nho Quế',
+        targetImageUrl: 'https://images.unsplash.com/photo-1528127269322-539801943592?w=600&h=350&fit=crop',
+        targetSummary: 'Hành trình chinh phục cung đường hạnh phúc hùng vĩ nơi địa đầu Tổ quốc.',
+      ),
+    ];
+
     try {
       final queryParams = {
         'page': page.toString(),
@@ -406,16 +503,34 @@ class UserProfileApiService {
       debugPrint('[UserProfileApiService] getMyComments error: $e');
     }
 
+    final token = await AuthService().getAccessToken();
+    final isUserLoggedIn = token != null && token.isNotEmpty;
+
     return ApiResponse<List<UserCommentItemModel>>(
       success: true,
       message: 'OK',
-      data: const [],
+      data: isUserLoggedIn ? const [] : defaultComments,
     );
   }
 
   // ==================== 4. BLOGS ====================
 
   Future<ApiResponse<List<UserBlogItemModel>>> getMyBlogs({int? status, int page = 1, int pageSize = 50}) async {
+    final localBlogs = await BlogApiService().getCreatedBlogs();
+    final localItems = localBlogs.map((b) => UserBlogItemModel(
+      id: int.tryParse(b.id) ?? (b.id.hashCode.abs() % 100000),
+      title: b.title,
+      slug: b.slug,
+      coverImg: b.imageUrl,
+      excerpt: b.summary,
+      status: 1,
+      category: b.category,
+      readTimeMinutes: b.readTimeMinutes,
+      viewsCount: 0,
+      likesCount: b.likesCount,
+      createdAt: b.publishedDate,
+    )).toList();
+
     try {
       final queryParams = <String, String>{
         'page': page.toString(),
@@ -424,8 +539,8 @@ class UserProfileApiService {
       if (status != null) queryParams['status'] = status.toString();
 
       final response = await _getWithFallback(
-        '/api/v1/users/me/blogs',
-        '/api/users/me/blogs',
+        '/api/blogs/my-blogs',
+        '/api/v1/blogs/my-blogs',
         queryParams: queryParams,
       );
 
@@ -434,8 +549,23 @@ class UserProfileApiService {
         if (json != null) {
           final raw = json['data'] is Map ? json['data']['items'] : json['data'];
           if (raw is List) {
-            final list = raw.map((e) => UserBlogItemModel.fromJson(e as Map<String, dynamic>)).toList();
-            return ApiResponse<List<UserBlogItemModel>>(success: true, message: 'OK', data: list);
+            final serverList = raw.map((e) => UserBlogItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            final combined = <UserBlogItemModel>[];
+            final seenIds = <int>{};
+
+            for (final b in localItems) {
+              if (seenIds.add(b.id)) combined.add(b);
+            }
+            for (final b in serverList) {
+              if (seenIds.add(b.id)) combined.add(b);
+            }
+
+            var filtered = combined;
+            if (status != null) {
+              filtered = filtered.where((b) => b.status == status).toList();
+            }
+
+            return ApiResponse<List<UserBlogItemModel>>(success: true, message: 'OK', data: filtered);
           }
         }
       }
@@ -443,10 +573,15 @@ class UserProfileApiService {
       debugPrint('[UserProfileApiService] getMyBlogs error: $e');
     }
 
+    var fallback = localItems;
+    if (status != null) {
+      fallback = fallback.where((b) => b.status == status).toList();
+    }
+
     return ApiResponse<List<UserBlogItemModel>>(
       success: true,
       message: 'OK',
-      data: const [],
+      data: fallback,
     );
   }
 
@@ -467,12 +602,17 @@ class UserProfileApiService {
 
   // ==================== 5. PROPOSALS ====================
 
-  static const String _localProposalsKey = 'user_proposals_cache_list';
+  static const String _localProposalsBaseKey = 'user_proposals_cache_list';
+
+  Future<String> _getLocalProposalsKey() async {
+    return await AuthService().getScopedKey(_localProposalsBaseKey);
+  }
 
   Future<void> _saveLocalProposal(ProposalItemModel item) async {
     try {
+      final key = await _getLocalProposalsKey();
       final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList(_localProposalsKey) ?? [];
+      final list = prefs.getStringList(key) ?? [];
       final encoded = jsonEncode(item.toJson());
       list.removeWhere((str) {
         try {
@@ -483,16 +623,19 @@ class UserProfileApiService {
         }
       });
       list.insert(0, encoded);
-      await prefs.setStringList(_localProposalsKey, list);
+      await prefs.setStringList(key, list);
     } catch (e) {
       debugPrint('[UserProfileApiService] _saveLocalProposal error: $e');
     }
   }
 
+  Future<void> saveLocalProposal(ProposalItemModel item) => _saveLocalProposal(item);
+
   Future<List<ProposalItemModel>> _getLocalProposals() async {
     try {
+      final key = await _getLocalProposalsKey();
       final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList(_localProposalsKey) ?? [];
+      final list = prefs.getStringList(key) ?? [];
       return list.map((str) => ProposalItemModel.fromJson(jsonDecode(str) as Map<String, dynamic>)).toList();
     } catch (_) {
       return [];
@@ -501,8 +644,9 @@ class UserProfileApiService {
 
   Future<void> _removeLocalProposal(int id) async {
     try {
+      final key = await _getLocalProposalsKey();
       final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList(_localProposalsKey) ?? [];
+      final list = prefs.getStringList(key) ?? [];
       list.removeWhere((str) {
         try {
           final m = jsonDecode(str) as Map<String, dynamic>;
@@ -511,7 +655,7 @@ class UserProfileApiService {
           return false;
         }
       });
-      await prefs.setStringList(_localProposalsKey, list);
+      await prefs.setStringList(key, list);
     } catch (_) {}
   }
 
@@ -528,8 +672,8 @@ class UserProfileApiService {
       if (status != null) queryParams['status'] = status.toString();
 
       final response = await _getWithFallback(
+        '/api/proposals/my-proposals',
         '/api/v1/users/me/proposals',
-        '/api/users/me/proposals',
         queryParams: queryParams,
       );
 
@@ -588,6 +732,8 @@ class UserProfileApiService {
     required String category,
     required String province,
     required String address,
+    int? categoryId,
+    int? provinceId,
     String? phone,
     String? website,
     String? openingHours,
@@ -601,30 +747,95 @@ class UserProfileApiService {
     List<String>? mediaUrls,
   }) async {
     ProposalItemModel? resultItem;
+
+    // Tự động ánh xạ Category ID từ tên danh mục
+    int resolvedCategoryId = categoryId ?? 1;
+    try {
+      final catIdMap = {
+        'ẩm thực': 1,
+        'đồ uống': 1,
+        'thắng cảnh': 2,
+        'danh lam': 2,
+        'di tích': 3,
+        'lịch sử': 3,
+        'bãi biển': 4,
+        'nghỉ dưỡng': 4,
+        'cà phê': 5,
+        'trà': 5,
+        'vui chơi': 6,
+        'giải trí': 6,
+        'khách sạn': 7,
+        'homestay': 7,
+        'bản địa': 8,
+      };
+      final catLower = category.toLowerCase();
+      for (final entry in catIdMap.entries) {
+        if (catLower.contains(entry.key)) {
+          resolvedCategoryId = entry.value;
+          break;
+        }
+      }
+    } catch (_) {}
+
+    // Tự động ánh xạ Province ID từ tên Tỉnh/Thành
+    int resolvedProvinceId = provinceId ?? 1;
+    try {
+      final provLower = province.toLowerCase().replaceAll('tp ', '').replaceAll('tỉnh ', '').trim();
+      if (provLower.contains('hà nội') || provLower.contains('ha noi')) {
+        resolvedProvinceId = 1;
+      } else if (provLower.contains('hồ chí minh') || provLower.contains('hcm') || provLower.contains('sài gòn')) {
+        resolvedProvinceId = 2;
+      } else if (provLower.contains('đà nẵng') || provLower.contains('da nang')) {
+        resolvedProvinceId = 3;
+      } else if (provLower.contains('lâm đồng') || provLower.contains('đà lạt')) {
+        resolvedProvinceId = 4;
+      } else if (provLower.contains('khánh hòa') || provLower.contains('nha trang')) {
+        resolvedProvinceId = 5;
+      } else if (provLower.contains('quảng ninh') || provLower.contains('hạ long')) {
+        resolvedProvinceId = 6;
+      } else if (provLower.contains('kiên giang') || provLower.contains('phú quốc')) {
+        resolvedProvinceId = 7;
+      } else if (provLower.contains('thừa thiên huế') || provLower.contains('huế')) {
+        resolvedProvinceId = 8;
+      } else if (provLower.contains('quảng nam') || provLower.contains('hội an')) {
+        resolvedProvinceId = 9;
+      } else if (provLower.contains('hải phòng')) {
+        resolvedProvinceId = 10;
+      }
+    } catch (_) {}
+
     try {
       final body = <String, dynamic>{
         'name': name.trim(),
-        'category': category.trim(),
-        'province': province.trim(),
+        'categoryId': resolvedCategoryId,
+        'provinceId': resolvedProvinceId,
         'address': address.trim(),
         if (phone != null && phone.isNotEmpty) 'phone': phone.trim(),
         if (website != null && website.isNotEmpty) 'website': website.trim(),
         if (openingHours != null && openingHours.isNotEmpty) 'openingHours': openingHours.trim(),
-        if (priceRange != null && priceRange.isNotEmpty) 'priceRange': priceRange.trim(),
         'minPrice': ?minPrice,
         'maxPrice': ?maxPrice,
-        if (description != null && description.isNotEmpty) 'description': description.trim(),
         'latitude': ?latitude,
         'longitude': ?longitude,
-        if (coverImg != null && coverImg.isNotEmpty) 'coverImg': coverImg,
-        if (mediaUrls != null && mediaUrls.isNotEmpty) 'mediaUrls': mediaUrls,
+        if (description != null && description.isNotEmpty) 'description': description.trim(),
+        if (coverImg != null && coverImg.isNotEmpty && (coverImg.startsWith('http') || coverImg.startsWith('data:')))
+          'coverImg': coverImg,
+        if (mediaUrls != null && mediaUrls.isNotEmpty)
+          'mediaUrls': mediaUrls.where((u) => u.startsWith('http') || u.startsWith('data:')).toList(),
       };
 
       final res = await _postWithFallback(
-        '/api/v1/proposals',
         '/api/proposals',
+        '/api/v1/proposals',
         body: body,
       );
+
+      if (res != null && res.statusCode == 401) {
+        return ApiResponse<ProposalItemModel>(
+          success: false,
+          message: 'UNAUTHORIZED: Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+        );
+      }
 
       if (res != null && res.statusCode >= 200 && res.statusCode < 300) {
         final json = _tryDecodeJson(res);
@@ -665,5 +876,265 @@ class UserProfileApiService {
       data: resultItem,
     );
   }
+
+  // ==================== 6. USER PUBLIC PROFILE & TABS (REAL DATA) ====================
+
+  Future<ApiResponse<PublicUserProfileModel>> getUserPublicProfile(int userId) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/profile',
+        '/api/v1/users/$userId/profile',
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null && json['data'] != null) {
+          final profile = PublicUserProfileModel.fromJson(json['data'] as Map<String, dynamic>);
+          return ApiResponse<PublicUserProfileModel>(success: true, message: 'OK', data: profile);
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserPublicProfile error: $e');
+    }
+
+    return ApiResponse<PublicUserProfileModel>(
+      success: false,
+      message: 'Không thể tải thông tin hồ sơ',
+      data: PublicUserProfileModel(
+        id: userId,
+        fullName: 'Người dùng #$userId',
+        avatarUrl: null,
+        coverUrl: null,
+        bio: '',
+        joinedDate: 'Tham gia gần đây',
+        rankLevel: 'Tân binh',
+        reputationScore: 0,
+      ),
+    );
+  }
+
+  /// Lấy danh sách đánh giá thật của người dùng
+  Future<ApiResponse<List<UserReviewItemModel>>> getUserReviews(int userId, {int page = 1, int pageSize = 30}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/reviews',
+        '/api/v1/users/$userId/reviews',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserReviewItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserReviewItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserReviews error: $e');
+    }
+    return const ApiResponse<List<UserReviewItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Lấy dòng hoạt động (bình luận / tương tác) thật của người dùng
+  Future<ApiResponse<List<UserCommentItemModel>>> getUserActivities(int userId, {int page = 1, int pageSize = 30}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/comments',
+        '/api/v1/users/$userId/comments',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserCommentItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserCommentItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserActivities error: $e');
+    }
+    return const ApiResponse<List<UserCommentItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Lấy danh sách chuyến đi của chính tài khoản hiện tại (/api/users/me/trips)
+  Future<ApiResponse<List<UserTripItemModel>>> getMyTrips({int page = 1, int pageSize = 50}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/me/trips',
+        '/api/v1/users/me/trips',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserTripItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserTripItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+
+      // Fallback: nếu /me không trả về, thử query qua ID của user hiện tại
+      final currentUser = await AuthService().getCachedUser();
+      if (currentUser != null && currentUser.id.isNotEmpty) {
+        final intId = int.tryParse(currentUser.id);
+        if (intId != null && intId > 0) {
+          return await getUserTrips(intId, page: page, pageSize: pageSize);
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getMyTrips error: $e');
+    }
+    return const ApiResponse<List<UserTripItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Xóa chuyến đi của người dùng (/api/trips/{id})
+  Future<bool> deleteTrip(int tripId) async {
+    try {
+      final response = await _deleteWithFallback(
+        '/api/trips/$tripId',
+        '/api/v1/trips/$tripId',
+      );
+      return response != null && response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      debugPrint('[UserProfileApiService] deleteTrip error: $e');
+      return false;
+    }
+  }
+
+  /// Lấy danh sách chuyến đi thật của người dùng
+  Future<ApiResponse<List<UserTripItemModel>>> getUserTrips(int userId, {int page = 1, int pageSize = 30}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/trips',
+        '/api/v1/users/$userId/trips',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserTripItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserTripItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserTrips error: $e');
+    }
+    return const ApiResponse<List<UserTripItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Lấy danh sách nhật ký điểm đến thật của người dùng
+  Future<ApiResponse<List<VisitLogItemModel>>> getUserVisitLogs(int userId, {int page = 1, int pageSize = 50}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/visit-logs',
+        '/api/v1/users/$userId/visit-logs',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => VisitLogItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<VisitLogItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserVisitLogs error: $e');
+    }
+    return const ApiResponse<List<VisitLogItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Lấy danh sách bài viết thật của người dùng
+  Future<ApiResponse<List<UserBlogItemModel>>> getUserBlogs(int userId, {int page = 1, int pageSize = 30}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/blogs',
+        '/api/v1/users/$userId/blogs',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserBlogItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserBlogItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserBlogs error: $e');
+    }
+    return const ApiResponse<List<UserBlogItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Lấy danh sách địa điểm đề xuất thật của người dùng
+  Future<ApiResponse<List<ProposalItemModel>>> getUserProposals(int userId, {int page = 1, int pageSize = 30}) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/proposals',
+        '/api/v1/users/$userId/proposals',
+        queryParams: {'page': '$page', 'pageSize': '$pageSize'},
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => ProposalItemModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<ProposalItemModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserProposals error: $e');
+    }
+    return const ApiResponse<List<ProposalItemModel>>(success: true, message: 'OK', data: []);
+  }
+
+  /// Lấy danh sách điểm bản đồ dấu chân du lịch (Reviews + VisitLogs + Proposals)
+  Future<ApiResponse<List<UserMapPlaceModel>>> getUserMapPlaces(int userId) async {
+    try {
+      final response = await _getWithFallback(
+        '/api/users/$userId/map-places',
+        '/api/v1/users/$userId/map-places',
+      );
+
+      if (response != null && response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final raw = json['data'] is Map ? json['data']['items'] : json['data'];
+          if (raw is List) {
+            final list = raw.map((e) => UserMapPlaceModel.fromJson(e as Map<String, dynamic>)).toList();
+            return ApiResponse<List<UserMapPlaceModel>>(success: true, message: 'OK', data: list);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[UserProfileApiService] getUserMapPlaces error: $e');
+    }
+    return const ApiResponse<List<UserMapPlaceModel>>(success: true, message: 'OK', data: []);
+  }
 }
+
+
 

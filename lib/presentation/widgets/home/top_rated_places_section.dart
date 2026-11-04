@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/place_model.dart';
-import '../../../data/services/place_api_service.dart';
-import '../../../data/services/favorite_api_service.dart';
 import '../../screens/destinations/place_detail_screen.dart';
 
-class TopRatedPlacesSection extends StatefulWidget {
+class TopRatedPlacesSection extends StatelessWidget {
   final List<PlaceModel> places;
   final VoidCallback? onViewAllTap;
   final Function(PlaceModel place)? onPlaceTap;
@@ -17,68 +15,8 @@ class TopRatedPlacesSection extends StatefulWidget {
   });
 
   @override
-  State<TopRatedPlacesSection> createState() => _TopRatedPlacesSectionState();
-}
-
-class _TopRatedPlacesSectionState extends State<TopRatedPlacesSection> {
-  final Set<int> _savedIds = {};
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSavedIds();
-  }
-
-  @override
-  void didUpdateWidget(covariant TopRatedPlacesSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _loadSavedIds();
-  }
-
-  Future<void> _loadSavedIds() async {
-    final ids = await FavoriteApiService().getFavoritePlaceIds();
-    if (mounted) {
-      setState(() {
-        _savedIds.clear();
-        _savedIds.addAll(ids);
-      });
-    }
-  }
-
-  void _toggleSave(PlaceModel place) async {
-    final isSaved = _savedIds.contains(place.id);
-    setState(() {
-      if (isSaved) {
-        _savedIds.remove(place.id);
-      } else {
-        _savedIds.add(place.id);
-      }
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          !isSaved
-              ? 'Đã lưu "${place.name}" vào danh sách yêu thích!'
-              : 'Đã bỏ lưu địa điểm.',
-        ),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-
-    try {
-      if (!isSaved) {
-        await PlaceApiService().savePlace(place.id, place: place);
-      } else {
-        await PlaceApiService().unsavePlace(place.id);
-      }
-    } catch (_) {}
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final displayPlaces = widget.places.take(4).toList();
+    final displayPlaces = places.take(4).toList();
     if (displayPlaces.isEmpty) return const SizedBox.shrink();
 
     return Padding(
@@ -115,9 +53,9 @@ class _TopRatedPlacesSectionState extends State<TopRatedPlacesSection> {
                   ),
                 ],
               ),
-              if (widget.onViewAllTap != null)
+              if (onViewAllTap != null)
                 GestureDetector(
-                  onTap: widget.onViewAllTap,
+                  onTap: onViewAllTap,
                   child: Row(
                     children: const [
                       Text(
@@ -151,7 +89,6 @@ class _TopRatedPlacesSectionState extends State<TopRatedPlacesSection> {
             itemCount: displayPlaces.length,
             itemBuilder: (context, index) {
               final place = displayPlaces[index];
-              final isSaved = _savedIds.contains(place.id) || place.isSaved;
               final ratingScore = place.rating > 0 ? place.rating : 5.0;
 
               return Material(
@@ -159,8 +96,8 @@ class _TopRatedPlacesSectionState extends State<TopRatedPlacesSection> {
                 borderRadius: BorderRadius.circular(16),
                 child: InkWell(
                   onTap: () {
-                    if (widget.onPlaceTap != null) {
-                      widget.onPlaceTap!(place);
+                    if (onPlaceTap != null) {
+                      onPlaceTap!(place);
                     } else {
                       Navigator.push(
                         context,
@@ -187,58 +124,23 @@ class _TopRatedPlacesSectionState extends State<TopRatedPlacesSection> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Image with heart button
+                        // Image
                         ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: AspectRatio(
                             aspectRatio: 1.0,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                Image.network(
-                                  place.imageUrl.isNotEmpty
-                                      ? place.imageUrl
-                                      : 'https://images.unsplash.com/photo-1528127269322-539801943592?q=80&w=600&auto=format&fit=crop',
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => Container(
-                                    color: const Color(0xFFF1F5F9),
-                                    child: const Center(
-                                      child: Icon(Icons.location_on_outlined,
-                                          color: Color(0xFF94A3B8), size: 28),
-                                    ),
-                                  ),
+                            child: Image.network(
+                              place.imageUrl.isNotEmpty
+                                  ? place.imageUrl
+                                  : 'https://images.unsplash.com/photo-1528127269322-539801943592?q=80&w=600&auto=format&fit=crop',
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                color: const Color(0xFFF1F5F9),
+                                child: const Center(
+                                  child: Icon(Icons.location_on_outlined,
+                                      color: Color(0xFF94A3B8), size: 28),
                                 ),
-                                Positioned(
-                                  top: 6,
-                                  right: 6,
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      onTap: () => _toggleSave(place),
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: Container(
-                                        width: 28,
-                                        height: 28,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(alpha: 0.95),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Center(
-                                          child: Icon(
-                                            isSaved
-                                                ? Icons.favorite_rounded
-                                                : Icons.favorite_border_rounded,
-                                            color: isSaved
-                                                ? const Color(0xFFF43F5E)
-                                                : const Color(0xFF1E293B),
-                                            size: 15,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         ),

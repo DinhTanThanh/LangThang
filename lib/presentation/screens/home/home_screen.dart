@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/image_utils.dart';
 import '../../../data/models/place_model.dart';
 import '../../../data/models/place_filter_dto.dart';
 import '../../../data/models/user_model.dart';
@@ -10,12 +12,23 @@ import '../../../data/services/auth_service.dart';
 import '../../widgets/home/region_showcase_card.dart';
 import '../../widgets/home/collection_track_section.dart';
 import '../../widgets/home/top_rated_places_section.dart';
-import '../../widgets/home/place_type_quick_nav_section.dart';
 import '../destinations/destinations_screen.dart';
 import '../destinations/place_detail_screen.dart';
+import '../destinations/province_screen.dart';
 import '../destinations/region_screen.dart';
+import '../destinations/contribute_place_screen.dart';
 import '../chat/chat_inbox_screen.dart';
+import '../auth/login_screen.dart';
 import '../../../data/services/chat_api_service.dart';
+import '../../../data/services/notification_api_service.dart';
+import '../../widgets/notification/header_notification_dropdown.dart';
+import '../../widgets/common/user_utility_drawer_modal.dart';
+import '../../widgets/navigation/system_nav_drawer_modal.dart';
+import '../../widgets/home/personalized_recommendation_section.dart';
+import '../../widgets/home/personalized_food_section.dart';
+import '../../../data/models/food_model.dart';
+import '../../../data/services/recommendation_api_service.dart';
+import '../leaderboard/leaderboard_index_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(int)? onNavigateTab;
@@ -33,14 +46,18 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final PlaceApiService _placeApiService = PlaceApiService();
+  StreamSubscription<UserModel?>? _userSubscription;
 
   // Data States
-  List<CategoryDto> _categories = [];
-  List<PlaceTypeDto> _placeTypes = [];
   List<CollectionDto> _featuredCollections = [];
   List<RegionDto> _regions = [];
   List<PlaceModel> _topRatedPlaces = [];
+  List<PlaceModel> _recommendedPlaces = [];
+  bool _isPersonalizedRecommendations = false;
+  List<FoodModel> _recommendedFoods = [];
   UserModel? _currentUser;
+  final GlobalKey _notificationBellKey = GlobalKey();
+  bool _isNotificationOpen = false;
 
   // Hero Filter Options
   List<RegionLookupDto> _heroRegions = [];
@@ -48,105 +65,206 @@ class _HomeScreenState extends State<HomeScreen> {
   String _selectedHeroRegion = '';
   String _selectedHeroCategory = '';
   final TextEditingController _heroSearchController = TextEditingController();
+  String _heroImageUrl = 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=1920&auto=format&fit=crop';
 
+  // Scroll Controller & Viewport/Scroll Lazy Loading Flags
+  final ScrollController _scrollController = ScrollController();
   bool _isLoading = true;
 
-  final List<Map<String, String>> _quickTags = [
-    {'label': 'Hà Giang', 'region': 'Miền Bắc'},
-    {'label': 'Phong Nha', 'region': 'Miền Trung'},
-    {'label': 'Đà Lạt', 'region': 'Miền Trung'},
-    {'label': 'Hội An', 'region': 'Miền Trung'},
-    {'label': 'Phú Quốc', 'region': 'Miền Nam'},
-  ];
+  bool _hasTriggeredCollections = false;
+  bool _isLoadingCollections = false;
+
+  bool _hasTriggeredFoods = false;
+  bool _isLoadingFoods = false;
+
+  bool _hasTriggeredTopRated = false;
+  bool _isLoadingTopRated = false;
 
   @override
   void initState() {
     super.initState();
-    _loadAllRealData();
+    _scrollController.addListener(_onScroll);
+    _currentUser = AuthService().currentUser;
+    _userSubscription = AuthService().onUserUpdated.listen((user) {
+      if (mounted) {
+        setState(() {
+          _currentUser = user;
+          _isPersonalizedRecommendations = user != null;
+        });
+        if (user != null) {
+          NotificationApiService().getUnreadCount();
+        }
+        _loadRecommendations();
+      }
+    });
+    if (_currentUser != null) {
+      NotificationApiService().getUnreadCount();
+    }
+    // Chỉ nạp nhanh những gì đang hiển thị trên màn hình đầu tiên (Viewport First)
+    _loadInitialViewportData();
+  }
+
+  /// Lắng nghe vị trí cuộn: Lướt tới đâu thì tự động kích hoạt tải trước dữ liệu tới đó
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final offset = _scrollController.position.pixels;
+
+    // 1. Khi người dùng bắt đầu vuốt xuống (> 60px): Kích hoạt nạp Bộ sưu tập & Vùng miền
+    if (offset >= 60 && !_hasTriggeredCollections) {
+      _hasTriggeredCollections = true;
+      _loadCollectionsAndRegionsLazy();
+    }
+
+    // 2. Khi người dùng cuộn tiếp (> 400px): Kích hoạt nạp Món ăn đặc sản gợi ý
+    if (offset >= 400 && !_hasTriggeredFoods) {
+      _hasTriggeredFoods = true;
+      _loadRecommendedFoodsLazy();
+    }
+
+    // 3. Khi người dùng cuộn gần tới cuối trang (> 750px): Kích hoạt nạp Điểm đến đánh giá cao nhất
+    if (offset >= 750 && !_hasTriggeredTopRated) {
+      _hasTriggeredTopRated = true;
+      _loadTopRatedPlacesLazy();
+    }
+  }
+
+  /// Tải lại danh sách gợi ý khi trạng thái đăng nhập thay đổi
+  Future<void> _loadRecommendations() async {
+    try {
+      final res = await RecommendationApiService().getPersonalizedPlaces(topK: 6);
+      final foods = _hasTriggeredFoods
+          ? await RecommendationApiService().getRecommendedFoods(topK: 8)
+          : <FoodModel>[];
+      if (mounted) {
+        setState(() {
+          if (res.items.isNotEmpty) {
+            _recommendedPlaces = res.items;
+          }
+          _isPersonalizedRecommendations = (_currentUser != null);
+          if (foods.isNotEmpty) {
+            _recommendedFoods = foods;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] _loadRecommendations error: $e');
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _userSubscription?.cancel();
     _heroSearchController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadAllRealData() async {
-    setState(() => _isLoading = true);
+  /// BƯỚC 1: Chỉ nạp dữ liệu hiển thị trên khung nhìn màn hình đầu tiên (Mất < 300ms, không đơ màn hình)
+  Future<void> _loadInitialViewportData() async {
+    // 0. Nhanh chóng lấy thông tin người dùng từ cache/token
+    try {
+      final isLoggedIn = await AuthService().isLoggedIn();
+      if (isLoggedIn) {
+        final cached = await AuthService().getCachedUser();
+        if (cached != null && mounted) {
+          setState(() {
+            _currentUser = cached;
+            _isPersonalizedRecommendations = true;
+          });
+        }
+        // Đồng bộ ngầm profile đầy đủ
+        AuthService().getProfile().then((res) {
+          if (res.success && res.data != null && mounted) {
+            setState(() => _currentUser = res.data);
+          }
+        });
+      }
+    } catch (_) {}
 
     try {
-      // 0. Fetch user profile
-      try {
-        final cached = await AuthService().getCachedUser();
-        if (cached != null) {
-          _currentUser = cached;
-        }
-        if (await AuthService().isLoggedIn()) {
-          final profileRes = await AuthService().getProfile();
-          if (profileRes.success && profileRes.data != null) {
-            _currentUser = profileRes.data;
-          }
-        }
-      } catch (_) {}
-
-      // 1. Fetch filter options, categories, place types, collections, and regions in parallel
+      // Chỉ nạp 3 API siêu nhẹ cần cho khung nhìn ban đầu: SystemSettings, FilterOptions, và 6 địa điểm gợi ý
       final filterOptionsFuture = _placeApiService.getFilterOptions();
-      final categoriesFuture = _placeApiService.getCategories();
-      final placeTypesFuture = _placeApiService.getPlaceTypes();
-      final collectionsFuture = _placeApiService.getFeaturedCollections(count: 6);
-      final regionsFuture = _placeApiService.getRegions();
-      final topRatedFuture = _placeApiService.searchPlaces(
-        const PlaceFilterParams(sortBy: 'rating_desc', pageSize: 6),
-      );
+      final settingsFuture = _placeApiService.getSystemSettings();
+      final recommendationsFuture = RecommendationApiService().getPersonalizedPlaces(topK: 6);
 
       final filterOptionsRes = await filterOptionsFuture;
-      final categoriesRes = await categoriesFuture;
-      final placeTypesRes = await placeTypesFuture;
+      final settingsMap = await settingsFuture;
+      final recommendationsRes = await recommendationsFuture;
+
+      if (mounted) {
+        if (settingsMap['HOME_HERO_IMAGE'] != null && settingsMap['HOME_HERO_IMAGE']!.trim().isNotEmpty) {
+          _heroImageUrl = settingsMap['HOME_HERO_IMAGE']!.trim();
+        }
+
+        if (filterOptionsRes.data != null) {
+          final opts = filterOptionsRes.data!;
+          _heroRegions = opts.regions;
+          _heroCategories = opts.categories;
+        }
+
+        if (recommendationsRes.items.isNotEmpty) {
+          _recommendedPlaces = recommendationsRes.items;
+        }
+        _isPersonalizedRecommendations = (_currentUser != null);
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] _loadInitialViewportData error: $e');
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+
+    // Nạp nhanh trạng thái yêu thích ngầm (không chặn UI)
+    FavoriteApiService().getFavoritePlaceIds().then((savedIds) {
+      if (mounted && savedIds.isNotEmpty) {
+        setState(() {
+          _recommendedPlaces = _recommendedPlaces.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList();
+        });
+      }
+    });
+
+    // Nạp lịch sử xem gần đây ngầm
+    RecentHistoryService().getRecentVisitedPlaces();
+
+    // Tự động tải trước các phần tiếp theo trong nền để trang chủ luôn đầy đủ nội dung phong phú
+    if (!_hasTriggeredCollections) {
+      _hasTriggeredCollections = true;
+      _loadCollectionsAndRegionsLazy();
+    }
+    if (!_hasTriggeredFoods) {
+      _hasTriggeredFoods = true;
+      _loadRecommendedFoodsLazy();
+    }
+    if (!_hasTriggeredTopRated) {
+      _hasTriggeredTopRated = true;
+      _loadTopRatedPlacesLazy();
+    }
+  }
+
+  /// BƯỚC 2A (Lazy): Khi người dùng lướt tới, nạp Bộ sưu tập và Vùng miền
+  Future<void> _loadCollectionsAndRegionsLazy() async {
+    if (_isLoadingCollections) return;
+    setState(() => _isLoadingCollections = true);
+
+    try {
+      final collectionsFuture = _placeApiService.getFeaturedCollections(count: 4);
+      final regionsFuture = _placeApiService.getRegions();
+
       final collectionsRes = await collectionsFuture;
       final regionsRes = await regionsFuture;
-      final topRatedRes = await topRatedFuture;
 
-      if (filterOptionsRes.data != null) {
-        final opts = filterOptionsRes.data!;
-        _heroRegions = opts.regions;
-        _heroCategories = opts.categories;
-      }
-
-      if (categoriesRes.data != null) {
-        _categories = categoriesRes.data!;
-      }
-
-      if (placeTypesRes.data != null && placeTypesRes.data!.isNotEmpty) {
-        _placeTypes = placeTypesRes.data!;
-      } else if (_categories.isNotEmpty) {
-        _placeTypes = _categories
-            .map((c) => PlaceTypeDto(
-                  id: c.id,
-                  name: c.name,
-                  iconClass: c.iconClass,
-                  placeCount: c.placeCount,
-                ))
-            .toList();
-      }
-
-      if (regionsRes.data != null) {
-        _regions = regionsRes.data!;
-      }
-
-      if (topRatedRes.data != null) {
-        _topRatedPlaces = topRatedRes.data!;
-      }
-
-      // 2. Fetch Places for each Collection
+      List<CollectionDto> populatedCollections = [];
       if (collectionsRes.data != null) {
-        List<CollectionDto> rawCollections = collectionsRes.data!;
-        List<CollectionDto> populatedCollections = [];
+        final rawCollections = collectionsRes.data!;
 
-        for (final col in rawCollections) {
-          if (col.places.isNotEmpty) {
-            populatedCollections.add(col);
-          } else {
-            // Fetch places for this collection or query by collection keyword/type
+        // Tối ưu chạy song song Future.wait thay vì lặp tuần tự từng collection
+        final futures = rawCollections.map((col) async {
+          if (col.places.isNotEmpty) return col;
+          try {
             final colPlacesRes = await _placeApiService.searchPlaces(
               PlaceFilterParams(
                 keyword: col.title.contains('Bắc')
@@ -154,87 +272,124 @@ class _HomeScreenState extends State<HomeScreen> {
                     : (col.title.contains('Trung')
                         ? 'Đà Nẵng'
                         : (col.title.contains('Nam') ? 'Sài Gòn' : null)),
-                pageSize: 6,
+                pageSize: 5,
                 sortBy: 'popular_desc',
               ),
             );
-
             final placesList = (colPlacesRes.data != null && colPlacesRes.data!.isNotEmpty)
                 ? colPlacesRes.data!
-                : _topRatedPlaces.take(5).toList();
+                : <PlaceModel>[];
 
-            populatedCollections.add(
-              CollectionDto(
-                id: col.id,
-                title: col.title,
-                description: col.description,
-                isFeatured: col.isFeatured,
-                displayOrder: col.displayOrder,
-                coverUrl: col.coverUrl,
-                placeCount: col.placeCount > 0 ? col.placeCount : placesList.length,
-                places: placesList,
-              ),
+            return CollectionDto(
+              id: col.id,
+              title: col.title,
+              description: col.description,
+              isFeatured: col.isFeatured,
+              displayOrder: col.displayOrder,
+              coverUrl: col.coverUrl,
+              placeCount: col.placeCount > 0 ? col.placeCount : placesList.length,
+              places: placesList,
             );
+          } catch (_) {
+            return col;
           }
-        }
-        _featuredCollections = populatedCollections;
+        }).toList();
+
+        populatedCollections = await Future.wait(futures);
       }
 
-      // 3. Populate Provinces for Regions if needed
-      if (_regions.isNotEmpty && _heroRegions.isNotEmpty) {
-        List<RegionDto> populatedRegions = [];
-        for (final r in _regions) {
-          final matchedLookup = _heroRegions.firstWhere(
-            (hl) => hl.id == r.id || hl.name.toLowerCase() == r.name.toLowerCase(),
-            orElse: () => const RegionLookupDto(id: 0, name: '', provinces: []),
-          );
-
-          List<ProvinceDto> provs = r.provinces;
-          if (provs.isEmpty && matchedLookup.provinces.isNotEmpty) {
-            provs = matchedLookup.provinces.map((lp) {
-              return ProvinceDto(
-                id: lp.id,
-                regionId: r.id,
-                regionName: r.name,
-                name: lp.name,
-                placeCount: 15,
-              );
-            }).toList();
-          }
-
-          populatedRegions.add(
-            RegionDto(
-              id: r.id,
-              name: r.name,
-              tagline: r.tagline ?? (r.id == 1 ? 'Vùng đất nghìn năm di sản' : (r.id == 2 ? 'Hành trình di sản & biển ngọc' : 'Sôi động nhịp sống phương Nam')),
-              description: r.description ?? 'Khám phá những điểm đến đặc trưng, ẩm thực đậm đà bản sắc và cảnh sắc thiên nhiên tuyệt tác của ${r.name}.',
-              imageUrl: r.imageUrl,
-              orderIndex: r.orderIndex,
-              provinceCount: provs.length,
-              provinces: provs,
-            ),
-          );
-        }
-        _regions = populatedRegions;
+      List<RegionDto> populatedRegions = [];
+      if (regionsRes.data != null) {
+        populatedRegions = regionsRes.data!;
       }
 
-      // 4. Đồng bộ trạng thái đã lưu từ FavoriteApiService
+      // Đồng bộ trạng thái đã lưu
       final savedIds = await FavoriteApiService().getFavoritePlaceIds();
-      _topRatedPlaces = _topRatedPlaces.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList();
-      _featuredCollections = _featuredCollections.map((col) {
+      populatedCollections = populatedCollections.map((col) {
         return col.copyWith(
           places: col.places.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList(),
         );
       }).toList();
 
-      // 5. Nạp danh sách đã xem gần đây
-      RecentHistoryService().getRecentVisitedPlaces();
+      if (mounted) {
+        setState(() {
+          _featuredCollections = populatedCollections;
+          _regions = populatedRegions;
+          _isLoadingCollections = false;
+        });
+      }
     } catch (e) {
-      debugPrint('[HomeScreen] Error loading real data: $e');
+      debugPrint('[HomeScreen] _loadCollectionsAndRegionsLazy error: $e');
+      if (mounted) setState(() => _isLoadingCollections = false);
     }
+  }
 
-    if (mounted) {
-      setState(() => _isLoading = false);
+  /// BƯỚC 2B (Lazy): Khi người dùng lướt tiếp xuống, nạp Món ăn đặc sản gợi ý
+  Future<void> _loadRecommendedFoodsLazy() async {
+    if (_isLoadingFoods) return;
+    setState(() => _isLoadingFoods = true);
+
+    try {
+      final foods = await RecommendationApiService().getRecommendedFoods(topK: 8);
+      if (mounted) {
+        setState(() {
+          _recommendedFoods = foods;
+          _isLoadingFoods = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] _loadRecommendedFoodsLazy error: $e');
+      if (mounted) setState(() => _isLoadingFoods = false);
+    }
+  }
+
+  /// BƯỚC 2C (Lazy): Khi người dùng lướt xuống cuối trang, nạp Điểm đến đánh giá cao nhất
+  Future<void> _loadTopRatedPlacesLazy() async {
+    if (_isLoadingTopRated) return;
+    setState(() => _isLoadingTopRated = true);
+
+    try {
+      final topRatedRes = await _placeApiService.searchPlaces(
+        const PlaceFilterParams(sortBy: 'rating_desc', pageSize: 6),
+      );
+      if (mounted) {
+        final savedIds = await FavoriteApiService().getFavoritePlaceIds();
+        final rawPlaces = topRatedRes.data ?? [];
+        final mapped = rawPlaces.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList();
+        setState(() {
+          _topRatedPlaces = mapped;
+          _isLoadingTopRated = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] _loadTopRatedPlacesLazy error: $e');
+      if (mounted) setState(() => _isLoadingTopRated = false);
+    }
+  }
+
+  /// Pull-to-refresh: Làm mới mượt mà các mục đã được kích hoạt
+  Future<void> _onRefreshAll() async {
+    _hasTriggeredCollections = false;
+    _hasTriggeredFoods = false;
+    _hasTriggeredTopRated = false;
+
+    await _loadInitialViewportData();
+
+    // Nếu người dùng đang cuộn ở dưới, nạp lại theo vị trí cuộn
+    if (_scrollController.hasClients) {
+      final offset = _scrollController.position.pixels;
+      if (offset >= 60) {
+        _hasTriggeredCollections = true;
+        _loadCollectionsAndRegionsLazy();
+      }
+      if (offset >= 400) {
+        _hasTriggeredFoods = true;
+        _loadRecommendedFoodsLazy();
+      }
+      if (offset >= 750) {
+        _hasTriggeredTopRated = true;
+        _loadTopRatedPlacesLazy();
+      }
     }
   }
 
@@ -245,6 +400,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) {
         setState(() {
           _topRatedPlaces = _topRatedPlaces.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList();
+          _recommendedPlaces = _recommendedPlaces.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList();
           _featuredCollections = _featuredCollections.map((col) {
             return col.copyWith(
               places: col.places.map((p) => p.copyWith(isSaved: savedIds.contains(p.id))).toList(),
@@ -305,106 +461,364 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displayRecommended = _recommendedPlaces.isNotEmpty ? _recommendedPlaces : _topRatedPlaces;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         backgroundColor: Colors.white,
         elevation: 0,
-        titleSpacing: 16,
+        centerTitle: false,
+        titleSpacing: 12,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            RichText(
-              text: const TextSpan(
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.primary,
-                  letterSpacing: -0.8,
-                ),
-                children: [
-                  TextSpan(text: 'LangThang'),
-                  TextSpan(
-                    text: '.',
-                    style: TextStyle(color: AppColors.secondary),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9).withValues(alpha: 0.6),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.menu_rounded, color: Color(0xFF1E293B), size: 21),
+                tooltip: 'Danh mục điều hướng',
+                onPressed: () {
+                  SystemNavDrawerModal.show(
+                    context,
+                    onNavigateTab: widget.onNavigateTab,
+                    activeRoute: 'home',
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: RichText(
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  text: const TextSpan(
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                      letterSpacing: -0.6,
+                    ),
+                    children: [
+                      TextSpan(text: 'LangThang'),
+                      TextSpan(
+                        text: '.',
+                        style: TextStyle(color: Color(0xFF059669)),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ],
         ),
         actions: [
-          StreamBuilder<int>(
-            stream: ChatApiService().onTotalUnreadCountChanged,
-            builder: (context, snapshot) {
-              final unread = snapshot.data ?? ChatApiService().getTotalUnreadCount();
-              return Stack(
-                alignment: Alignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.textPrimary),
-                    tooltip: 'Tin nhắn',
-                    onPressed: () {
+          // 1. Button "Đề xuất địa điểm" (Dạng icon tròn 36x36 thanh lịch, đồng bộ tuyệt đối)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Material(
+                color: Colors.transparent,
+                child: Tooltip(
+                  message: 'Đề xuất địa điểm mới',
+                  child: InkWell(
+                    onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const ChatInboxScreen()),
+                        MaterialPageRoute(builder: (context) => const ContributePlaceScreen()),
                       );
                     },
-                  ),
-                  if (unread > 0)
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFEF4444),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          '$unread',
-                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                        ),
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECFDF5),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFA7F3D0), width: 1.2),
+                      ),
+                      alignment: Alignment.center,
+                      child: const Icon(
+                        Icons.add_location_alt_rounded,
+                        size: 19,
+                        color: Color(0xFF047857),
                       ),
                     ),
-                ],
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_none_rounded, color: AppColors.textPrimary),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Không có thông báo mới.')),
-              );
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16, left: 4),
-            child: GestureDetector(
-              onTap: () => widget.onNavigateTab?.call(6),
-              child: CircleAvatar(
-                radius: 17,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                backgroundImage: (_currentUser?.avatarUrl != null &&
-                        _currentUser!.avatarUrl.isNotEmpty)
-                    ? NetworkImage(_currentUser!.avatarUrl)
-                    : null,
-                child: (_currentUser?.avatarUrl == null ||
-                        _currentUser!.avatarUrl.isEmpty)
-                    ? Text(
-                        _currentUser?.fullName.isNotEmpty == true
-                            ? _currentUser!.fullName[0].toUpperCase()
-                            : 'U',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      )
-                    : null,
+                  ),
+                ),
               ),
             ),
           ),
+
+          // 2. Button "Thông báo" với dropdown popover & realtime unread badge (36x36)
+          if (_currentUser != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Center(
+                child: ValueListenableBuilder<int>(
+                  valueListenable: NotificationApiService().unreadCountNotifier,
+                  builder: (context, unread, _) {
+                    return Stack(
+                      key: _notificationBellKey,
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: _isNotificationOpen
+                                ? const Color(0xFFD1FAE5)
+                                : const Color(0xFFF1F5F9).withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            icon: Icon(
+                              _isNotificationOpen ? Icons.notifications_rounded : Icons.notifications_none_rounded,
+                              color: _isNotificationOpen
+                                  ? const Color(0xFF065F46)
+                                  : const Color(0xFF334155),
+                              size: 20,
+                            ),
+                            tooltip: 'Thông báo',
+                            onPressed: () {
+                              setState(() => _isNotificationOpen = true);
+                              HeaderNotificationDropdown.show(
+                                context,
+                                anchorKey: _notificationBellKey,
+                                onNavigateTab: widget.onNavigateTab,
+                                onDismiss: () {
+                                  if (mounted) {
+                                    setState(() => _isNotificationOpen = false);
+                                  }
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                        if (unread > 0)
+                          Positioned(
+                            top: -1,
+                            right: -1,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEF4444),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.white, width: 1.5),
+                              ),
+                              constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+                              child: Text(
+                                unread > 99 ? '99+' : '$unread',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 8.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+
+          // 3. Button "Nhắn tin" với realtime unread badge (36x36)
+          if (_currentUser != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Center(
+                child: StreamBuilder<int>(
+                  stream: ChatApiService().onTotalUnreadCountChanged,
+                  builder: (context, snapshot) {
+                    final unread = snapshot.data ?? ChatApiService().getTotalUnreadCount();
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9).withValues(alpha: 0.6),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF334155), size: 19),
+                            onPressed: () async {
+                              final isLoggedIn = await AuthService().isLoggedIn();
+                              final token = await AuthService().getAccessToken();
+                              if (!isLoggedIn || token == null || token.isEmpty) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Vui lòng đăng nhập để sử dụng tính năng tin nhắn.'),
+                                    backgroundColor: Color(0xFF1E293B),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                                final didLogin = await Navigator.push<bool>(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                                );
+                                if (didLogin != true || !context.mounted) return;
+                              }
+                              if (!context.mounted) return;
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const ChatInboxScreen()),
+                              );
+                            },
+                          ),
+                        ),
+                        if (unread > 0)
+                          Positioned(
+                            top: -1,
+                            right: -1,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEF4444),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.white, width: 1.5),
+                              ),
+                              constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+                              child: Text(
+                                unread > 99 ? '99+' : '$unread',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+
+          // 4. Avatar cá nhân hoặc nút Đăng nhập nếu chưa đăng nhập
+          if (_currentUser == null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12, left: 2),
+              child: Center(
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen(redirectToHome: true)),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF047857),
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF047857).withValues(alpha: 0.25),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.login_rounded, size: 15, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'Đăng nhập',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: GestureDetector(
+                  onTap: () {
+                    UserUtilityDrawerModal.show(
+                      context,
+                      onNavigateTab: widget.onNavigateTab,
+                    );
+                  },
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    padding: const EdgeInsets.all(1.5),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.5), width: 1.5),
+                    ),
+                    child: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 16,
+                          backgroundColor: const Color(0xFFD1FAE5),
+                          backgroundImage: getAppImageProvider(_currentUser?.avatarUrl),
+                          child: (_currentUser?.avatarUrl == null ||
+                                  _currentUser!.avatarUrl.isEmpty)
+                              ? Text(
+                                  _currentUser?.fullName.isNotEmpty == true
+                                      ? _currentUser!.fullName[0].toUpperCase()
+                                      : 'U',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF047857),
+                                  ),
+                                )
+                              : null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1.5),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
@@ -415,8 +829,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : RefreshIndicator(
               color: AppColors.primary,
-              onRefresh: _loadAllRealData,
+              onRefresh: _onRefreshAll,
               child: SingleChildScrollView(
+                controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.only(bottom: 40),
                 child: Column(
@@ -425,26 +840,45 @@ class _HomeScreenState extends State<HomeScreen> {
                     // 1. HERO BANNER (Matching Share_Locations HeroBanner.tsx)
                     _buildHeroBanner(),
 
-                    const SizedBox(height: 20),
-
-                    // 2. PLACE TYPE QUICK NAV (Matching Share_Locations PlaceTypeQuickNav.tsx)
-                    PlaceTypeQuickNavSection(
-                      placeTypes: _placeTypes,
-                      onViewAllTap: () => _navigateToSearch(),
-                      onPlaceTypeTap: (pt) => _navigateToSearch(category: pt.name),
-                    ),
-
                     const SizedBox(height: 24),
+
+                    // 2.5. PERSONALIZED RECOMMENDATIONS (Matching Share_Locations PersonalizedRecommendationSection.tsx)
+                    if (displayRecommended.isNotEmpty) ...[
+                      PersonalizedRecommendationSection(
+                        places: displayRecommended,
+                        isPersonalized: _currentUser != null || _isPersonalizedRecommendations,
+                        onPlaceTap: _navigateToPlaceDetail,
+                      ),
+                      const SizedBox(height: 32),
+                    ],
 
                     // 3. HOME FEATURED INTERLEAVED (Matching Share_Locations HomeFeaturedInterleaved.tsx)
                     _buildHomeFeaturedInterleaved(),
 
                     const SizedBox(height: 32),
 
+                    // 3.5. PERSONALIZED FOODS (Matching Share_Locations PersonalizedFoodSection.tsx)
+                    if (_recommendedFoods.isNotEmpty) ...[
+                      PersonalizedFoodSection(
+                        foods: _recommendedFoods,
+                        onPlaceTap: _navigateToPlaceDetail,
+                      ),
+                      const SizedBox(height: 32),
+                    ],
+
                     // 4. TOP RATED PLACES SECTION (Matching Share_Locations TopRatedPlacesSection.tsx)
                     TopRatedPlacesSection(
                       places: _topRatedPlaces,
-                      onViewAllTap: () => _navigateToSearch(category: null),
+                      onViewAllTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => LeaderboardIndexScreen(
+                              onNavigateTab: widget.onNavigateTab,
+                            ),
+                          ),
+                        );
+                      },
                       onPlaceTap: _navigateToPlaceDetail,
                     ),
                   ],
@@ -458,367 +892,567 @@ class _HomeScreenState extends State<HomeScreen> {
   // 1. HERO BANNER (Matching Share_Locations HeroBanner.tsx)
   // =========================================================================
   Widget _buildHeroBanner() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 640;
+
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: const Color(0xFFE2E8F0).withValues(alpha: 0.8),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          children: [
-            // Background Image
-            Positioned.fill(
-              child: Image.network(
-                'https://images.unsplash.com/photo-1528127269322-539801943592?q=80&w=1920&auto=format&fit=crop',
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    Container(color: const Color(0xFF0F172A)),
-              ),
-            ),
-
-            // Dark Gradient Overlay matching Web (from-slate-950/90 via-slate-950/45 to-slate-900/30)
-            Positioned.fill(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Color(0xFA020617),
-                      Color(0xB3020617),
-                      Color(0x4D0F172A),
-                    ],
-                    stops: [0.0, 0.65, 1.0],
-                  ),
-                ),
-              ),
-            ),
-
-            // Banner Content
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  RichText(
-                    text: const TextSpan(
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -0.6,
-                        height: 1.15,
-                      ),
-                      children: [
-                        TextSpan(text: 'Mỗi chuyến đi là\n'),
-                        TextSpan(
-                          text: 'một điều kỳ diệu',
-                          style: TextStyle(color: Color(0xFFFDBA74)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Khám phá trọn vẹn cảnh sắc 63 tỉnh thành, lưu giữ hàng ngàn quán ăn đặc sản bản địa và kết nối cùng cộng đồng du lịch tự túc.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.9),
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Search Form Box
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.08),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      children: [
-                        // Keyword input
-                        Row(
-                          children: [
-                            const SizedBox(width: 8),
-                            const Icon(Icons.search_rounded, color: AppColors.primary, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextField(
-                                controller: _heroSearchController,
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.textPrimary,
-                                    fontWeight: FontWeight.w600),
-                                decoration: const InputDecoration(
-                                  hintText: 'Bạn muốn đi đâu? (Hà Giang, Tràng An...)',
-                                  hintStyle: TextStyle(
-                                      color: AppColors.textSecondary, fontSize: 12),
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(vertical: 8),
-                                ),
-                                onSubmitted: (value) {
-                                  _navigateToSearch(
-                                    query: value,
-                                    region: _selectedHeroRegion.isNotEmpty
-                                        ? _selectedHeroRegion
-                                        : null,
-                                    category: _selectedHeroCategory.isNotEmpty
-                                        ? _selectedHeroCategory
-                                        : null,
-                                  );
-                                },
-                              ),
-                             ),
-                           ],
-                         ),
-
-                        const Divider(height: 12, thickness: 1, color: Color(0xFFF1F5F9)),
-
-                        // Filters row
-                        Row(
-                          children: [
-                            // Region dropdown
-                            Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: _selectedHeroRegion.isEmpty
-                                        ? null
-                                        : _selectedHeroRegion,
-                                    hint: const Row(
-                                      children: [
-                                        Icon(Icons.navigation_outlined,
-                                            size: 13, color: Color(0xFF64748B)),
-                                        SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            'Tất cả miền',
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFF475569),
-                                                fontWeight: FontWeight.w600),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    isExpanded: true,
-                                    icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                                        size: 16, color: Color(0xFF64748B)),
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF0F172A),
-                                        fontWeight: FontWeight.bold),
-                                    items: [
-                                      const DropdownMenuItem<String>(
-                                        value: '',
-                                        child: Text('Tất cả miền',
-                                            style: TextStyle(fontSize: 11)),
-                                      ),
-                                      ..._heroRegions.map((r) => DropdownMenuItem<String>(
-                                            value: r.name,
-                                            child: Text(r.name,
-                                                style: const TextStyle(fontSize: 11),
-                                                overflow: TextOverflow.ellipsis),
-                                          )),
-                                    ],
-                                    onChanged: (val) {
-                                      setState(() => _selectedHeroRegion = val ?? '');
-                                    },
-                                  ),
-                                ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: Stack(
+              children: [
+                // 1. Background Image with reliable loading & fallback
+                Positioned.fill(
+                  child: Image.network(
+                    _heroImageUrl,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFF38BDF8), Color(0xFF0F172A)],
                               ),
                             ),
+                          ),
+                          child,
+                        ],
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => Image.network(
+                      'https://images.unsplash.com/photo-1506744038136-46273834b3fb?q=80&w=1200&auto=format&fit=crop',
+                      fit: BoxFit.cover,
+                      errorBuilder: (ctx, err, st) => Container(
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Color(0xFF0284C7), Color(0xFF0F172A)],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
 
-                            const SizedBox(width: 8),
+                // 2. Balanced Gradient Overlay (Ensures title is readable while natural scenery stays bright & visible)
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: isWide
+                            ? const [
+                                Color(0xD9F0F9FF), // 85% sky-50 for desktop
+                                Color(0x33F0F9FF), // 20%
+                                Color(0x590F172A), // 35%
+                              ]
+                            : const [
+                                Color(0xAAF0F9FF), // 67% sky-50 so mountains remain clear
+                                Color(0x1FF0F9FF), // 12% in the middle
+                                Color(0x4D0F172A), // 30% slate-900
+                              ],
+                        stops: const [0.0, 0.42, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
 
-                            // Category dropdown
-                            Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: _selectedHeroCategory.isEmpty
-                                        ? null
-                                        : _selectedHeroCategory,
-                                    hint: const Row(
-                                      children: [
-                                        Icon(Icons.layers_outlined,
-                                            size: 13, color: Color(0xFF64748B)),
-                                        SizedBox(width: 4),
-                                        Expanded(
-                                          child: Text(
-                                            'Tất cả danh mục',
-                                            style: TextStyle(
-                                                fontSize: 11,
-                                                color: Color(0xFF475569),
-                                                fontWeight: FontWeight.w600),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    isExpanded: true,
-                                    icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                                        size: 16, color: Color(0xFF64748B)),
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFF0F172A),
-                                        fontWeight: FontWeight.bold),
-                                    items: [
-                                      const DropdownMenuItem<String>(
-                                        value: '',
-                                        child: Text('Tất cả danh mục',
-                                            style: TextStyle(fontSize: 11)),
-                                      ),
-                                      ..._heroCategories.map((c) => DropdownMenuItem<String>(
-                                            value: c.name,
-                                            child: Text(c.name,
-                                                style: const TextStyle(fontSize: 11),
-                                                overflow: TextOverflow.ellipsis),
-                                          )),
-                                    ],
-                                    onChanged: (val) {
-                                      setState(() => _selectedHeroCategory = val ?? '');
-                                    },
-                                  ),
+                // 3. Banner Content
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isWide ? 28 : 16,
+                    vertical: isWide ? 38 : 24,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Top Typography
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 800),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Cảm Hứng Khám Phá\nVô Vàn Trải Nghiệm',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: isWide ? 38 : 25,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF0F172A),
+                                letterSpacing: -0.8,
+                                height: 1.18,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                'Khám phá thế giới du lịch nhanh chóng, tiện lợi cùng LangThang — nơi đam mê xê dịch biến thành những hành trình đáng nhớ.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: isWide ? 15 : 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF334155),
+                                  height: 1.5,
                                 ),
                               ),
                             ),
                           ],
                         ),
+                      ),
 
-                        const SizedBox(height: 8),
+                      SizedBox(height: isWide ? 64 : 32),
 
-                        // Submit Button matching Web HeroBanner.tsx
-                        SizedBox(
-                          width: double.infinity,
-                          height: 42,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              _navigateToSearch(
-                                query: _heroSearchController.text.trim().isNotEmpty
-                                    ? _heroSearchController.text.trim()
-                                    : null,
-                                region: _selectedHeroRegion.isNotEmpty
-                                    ? _selectedHeroRegion
-                                    : null,
-                                category: _selectedHeroCategory.isNotEmpty
-                                    ? _selectedHeroCategory
-                                    : null,
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF004F32),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.explore_rounded, size: 16),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Khám phá ngay',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.2,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      // Floating Search / Filter Bar
+                      if (isWide)
+                        _buildWideSearchForm()
+                      else
+                        _buildCompactSearchForm(),
+                    ],
                   ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
-                  const SizedBox(height: 12),
-
-                  // Quick Tags
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        const Icon(Icons.location_on_rounded,
-                            size: 13, color: Color(0xFFFDBA74)),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Tìm nhanh: ',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold),
-                        ),
-                        ..._quickTags.map((tag) {
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: GestureDetector(
-                              onTap: () => _navigateToSearch(
-                                  query: tag['label'], region: tag['region']),
-                              child: Container(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.white24),
-                                ),
-                                child: Text(
-                                  tag['label']!,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+  Widget _buildWideSearchForm() {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 920),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(50),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.9),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 30,
+              offset: const Offset(0, 10),
             ),
           ],
         ),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: _buildDestinationField(isWide: true),
+            ),
+            _buildVerticalDivider(),
+            Expanded(
+              flex: 2,
+              child: _buildRegionDropdown(isWide: true),
+            ),
+            _buildVerticalDivider(),
+            Expanded(
+              flex: 2,
+              child: _buildCategoryDropdown(isWide: true),
+            ),
+            const SizedBox(width: 8),
+            _buildExploreButton(isFullWidth: false),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildCompactSearchForm() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.9),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 25,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildDestinationField(isWide: false),
+          Container(
+            height: 1,
+            color: const Color(0xFFF1F5F9),
+            margin: const EdgeInsets.symmetric(vertical: 8),
+          ),
+          Row(
+            children: [
+              Expanded(child: _buildRegionDropdown(isWide: false)),
+              _buildVerticalDivider(),
+              Expanded(child: _buildCategoryDropdown(isWide: false)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildExploreButton(isFullWidth: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDestinationField({required bool isWide}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF1F5F9),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.location_on_outlined,
+              size: 18,
+              color: Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Điểm đến',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF94A3B8),
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                TextField(
+                  controller: _heroSearchController,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                  decoration: const InputDecoration(
+                    hintText: 'Bạn muốn đi đâu? (Hà Giang, Đà Lạt...)',
+                    hintStyle: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF94A3B8),
+                    ),
+                    isDense: true,
+                    border: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _submitHeroSearch(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRegionDropdown({required bool isWide}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF1F5F9),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.explore_outlined,
+              size: 17,
+              color: Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Vùng miền',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF94A3B8),
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    isDense: true,
+                    dropdownColor: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    elevation: 8,
+                    value: _selectedHeroRegion.isEmpty ? null : _selectedHeroRegion,
+                    hint: const Text(
+                      'Tất cả miền',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    icon: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: Color(0xFF64748B),
+                    ),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: '',
+                        child: Text(
+                          'Tất cả miền',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      ..._heroRegions.map(
+                        (r) => DropdownMenuItem<String>(
+                          value: r.name,
+                          child: Text(
+                            r.name,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF0F172A),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      setState(() => _selectedHeroRegion = val ?? '');
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryDropdown({required bool isWide}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF1F5F9),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.layers_outlined,
+              size: 17,
+              color: Color(0xFF334155),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Danh mục',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF94A3B8),
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    isDense: true,
+                    dropdownColor: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    elevation: 8,
+                    value: _selectedHeroCategory.isEmpty ? null : _selectedHeroCategory,
+                    hint: const Text(
+                      'Tất cả danh mục',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    icon: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 16,
+                      color: Color(0xFF64748B),
+                    ),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: '',
+                        child: Text(
+                          'Tất cả danh mục',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      ..._heroCategories.map(
+                        (c) => DropdownMenuItem<String>(
+                          value: c.name,
+                          child: Text(
+                            c.name,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF0F172A),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                    onChanged: (val) {
+                      setState(() => _selectedHeroCategory = val ?? '');
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExploreButton({required bool isFullWidth}) {
+    return Material(
+      color: const Color(0xFF0F172A),
+      borderRadius: BorderRadius.circular(isFullWidth ? 16 : 30),
+      child: InkWell(
+        onTap: _submitHeroSearch,
+        borderRadius: BorderRadius.circular(isFullWidth ? 16 : 30),
+        child: Container(
+          height: 46,
+          padding: EdgeInsets.symmetric(horizontal: isFullWidth ? 16 : 22),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: isFullWidth ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Khám phá ngay',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFBBF24),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_forward_rounded,
+                  size: 13,
+                  color: Color(0xFF451A03),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVerticalDivider() {
+    return Container(
+      width: 1,
+      height: 32,
+      color: const Color(0xFFE2E8F0),
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+
+  void _submitHeroSearch() {
+    _navigateToSearch(
+      query: _heroSearchController.text.trim().isNotEmpty
+          ? _heroSearchController.text.trim()
+          : null,
+      region: _selectedHeroRegion.isNotEmpty ? _selectedHeroRegion : null,
+      category: _selectedHeroCategory.isNotEmpty ? _selectedHeroCategory : null,
     );
   }
 
@@ -851,7 +1485,16 @@ class _HomeScreenState extends State<HomeScreen> {
           RegionShowcaseCard(
             region: _regions[g],
             onProvinceTap: (regionName, provinceName) {
-              _navigateToSearch(region: regionName, query: provinceName);
+              if (provinceName != null && provinceName.isNotEmpty) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProvinceScreen(provinceName: provinceName),
+                  ),
+                );
+              } else {
+                _navigateToSearch(region: regionName, query: provinceName);
+              }
             },
             onExploreRegionTap: _navigateToRegionDetail,
           ),

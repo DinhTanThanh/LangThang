@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/models/blog_model.dart';
+import '../screens/profile/user_profile_screen.dart';
 
 class BlogCard extends StatelessWidget {
   final BlogModel blog;
@@ -102,23 +103,36 @@ class BlogCard extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 10,
-                            backgroundImage: NetworkImage(blog.authorAvatar),
-                            backgroundColor: Colors.grey.shade200,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            blog.authorName,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textPrimary,
+                      InkWell(
+                        onTap: () {
+                          UserProfileScreen.navigate(
+                            context,
+                            userId: blog.author.id.isNotEmpty ? blog.author.id : null,
+                            userName: blog.authorName,
+                            userAvatar: blog.authorAvatar,
+                            userBio: blog.author.bio,
+                            userRank: blog.author.role,
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(6),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 10,
+                              backgroundImage: NetworkImage(blog.authorAvatar),
+                              backgroundColor: Colors.grey.shade200,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              blog.authorName,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       Row(
                         children: [

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/blog_model.dart';
+import '../../screens/profile/user_profile_screen.dart';
 
 class BlogFeaturedCard extends StatelessWidget {
   final BlogModel blog;
@@ -106,25 +107,6 @@ class BlogFeaturedCard extends StatelessWidget {
                     ),
                   ),
 
-                  // Top Right: Bookmark Action Button
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: CircleAvatar(
-                      radius: 16,
-                      backgroundColor: Colors.black.withValues(alpha: 0.4),
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          blog.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                          size: 18,
-                          color: blog.isSaved ? const Color(0xFF34D399) : Colors.white,
-                        ),
-                        onPressed: onToggleSave,
-                      ),
-                    ),
-                  ),
-
                   // Bottom Left: Category & Read Time
                   Positioned(
                     bottom: 12,
@@ -213,44 +195,64 @@ class BlogFeaturedCard extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         // Author Info
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 14,
-                              backgroundColor: const Color(0xFF059669),
-                              backgroundImage: blog.authorAvatar.isNotEmpty
-                                  ? NetworkImage(blog.authorAvatar)
-                                  : null,
-                              child: blog.authorAvatar.isEmpty
-                                  ? Text(
-                                      blog.authorName.isNotEmpty ? blog.authorName[0].toUpperCase() : 'A',
-                                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                    )
-                                  : null,
+                        Expanded(
+                          child: InkWell(
+                            onTap: () => UserProfileScreen.navigate(
+                              context,
+                              userId: blog.author.id.isNotEmpty ? blog.author.id : (int.tryParse(blog.id) ?? 1),
+                              userName: blog.authorName.isNotEmpty ? blog.authorName : 'Tác giả',
+                              userAvatar: blog.authorAvatar.isNotEmpty ? blog.authorAvatar : null,
+                              userRank: 'Tác giả cẩm nang',
                             ),
-                            const SizedBox(width: 8),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Row(
                               children: [
-                                Text(
-                                  blog.authorName,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF1F2937),
-                                  ),
+                                CircleAvatar(
+                                  radius: 14,
+                                  backgroundColor: const Color(0xFF059669),
+                                  backgroundImage: blog.authorAvatar.isNotEmpty
+                                      ? NetworkImage(blog.authorAvatar)
+                                      : null,
+                                  child: blog.authorAvatar.isEmpty
+                                      ? Text(
+                                          blog.authorName.isNotEmpty ? blog.authorName[0].toUpperCase() : 'A',
+                                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                        )
+                                      : null,
                                 ),
-                                Text(
-                                  blog.publishedDate,
-                                  style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B7280)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        blog.authorName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF1F2937),
+                                        ),
+                                      ),
+                                      Text(
+                                        blog.publishedDate,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF6B7280)),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
 
                         // Actions & CTA
                         Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             // Likes
                             InkWell(

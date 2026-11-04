@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/region_landing_model.dart';
+import '../../screens/profile/user_profile_screen.dart';
 
 class RegionSpotlightReviews extends StatelessWidget {
   final RegionSpotlightModel? spotlight;
@@ -373,43 +374,53 @@ class _ReviewCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 18,
-                    backgroundColor: const Color(0xFFE2E8F0),
-                    backgroundImage: review.reviewerAvatar != null
-                        ? NetworkImage(review.reviewerAvatar!)
-                        : null,
-                    child: review.reviewerAvatar == null
-                        ? Text(
-                            review.reviewerName.isNotEmpty ? review.reviewerName.substring(0, 1) : 'U',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF004F32)),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        review.reviewerName,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
+              InkWell(
+                onTap: () {
+                  UserProfileScreen.navigate(
+                    context,
+                    userName: review.reviewerName,
+                    userAvatar: review.reviewerAvatar,
+                  );
+                },
+                borderRadius: BorderRadius.circular(8),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      backgroundImage: review.reviewerAvatar != null
+                          ? NetworkImage(review.reviewerAvatar!)
+                          : null,
+                      child: review.reviewerAvatar == null
+                          ? Text(
+                              review.reviewerName.isNotEmpty ? review.reviewerName.substring(0, 1) : 'U',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF004F32)),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          review.reviewerName,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                          ),
                         ),
-                      ),
-                      Text(
-                        review.visitDate,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          color: Color(0xFF94A3B8),
+                        Text(
+                          review.visitDate,
+                          style: const TextStyle(
+                            fontSize: 10.5,
+                            color: Color(0xFF94A3B8),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
               Row(
                 children: List.generate(

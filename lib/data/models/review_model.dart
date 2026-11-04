@@ -8,6 +8,7 @@ class ReviewItemModel {
   final List<String> images;
   final List<String> videos;
   final int likesCount;
+  final bool isLiked;
   final int commentsCount;
   final DateTime? createdAt;
   final String? visitDate;
@@ -22,6 +23,7 @@ class ReviewItemModel {
     this.images = const [],
     this.videos = const [],
     this.likesCount = 0,
+    this.isLiked = false,
     this.commentsCount = 0,
     this.createdAt,
     this.visitDate,
@@ -37,6 +39,7 @@ class ReviewItemModel {
     List<String>? images,
     List<String>? videos,
     int? likesCount,
+    bool? isLiked,
     int? commentsCount,
     DateTime? createdAt,
     String? visitDate,
@@ -51,6 +54,7 @@ class ReviewItemModel {
       images: images ?? this.images,
       videos: videos ?? this.videos,
       likesCount: likesCount ?? this.likesCount,
+      isLiked: isLiked ?? this.isLiked,
       commentsCount: commentsCount ?? this.commentsCount,
       createdAt: createdAt ?? this.createdAt,
       visitDate: visitDate ?? this.visitDate,
@@ -80,6 +84,7 @@ class ReviewItemModel {
       images: imagesList,
       videos: videosList,
       likesCount: (json['likesCount'] as num?)?.toInt() ?? 0,
+      isLiked: json['isLiked'] == true || json['isLiked'] == 1,
       commentsCount: (json['commentsCount'] as num?)?.toInt() ?? 0,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString())
@@ -99,6 +104,7 @@ class ReviewItemModel {
       'images': images,
       'videos': videos,
       'likesCount': likesCount,
+      'isLiked': isLiked,
       'commentsCount': commentsCount,
       'createdAt': createdAt?.toIso8601String(),
       'visitDate': visitDate,

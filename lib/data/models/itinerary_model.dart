@@ -49,6 +49,22 @@ class TripMemberModel {
     );
   }
 
+  TripMemberModel copyWith({
+    int? id,
+    String? name,
+    String? avatar,
+    String? email,
+    String? role,
+  }) {
+    return TripMemberModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      avatar: avatar ?? this.avatar,
+      email: email ?? this.email,
+      role: role ?? this.role,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,

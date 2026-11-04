@@ -4,7 +4,8 @@ enum MessageAttachmentType {
   trip(3),
   image(4),
   file(5),
-  audio(6);
+  audio(6),
+  blog(7);
 
   final int value;
   const MessageAttachmentType(this.value);
@@ -32,6 +33,8 @@ enum MessageAttachmentType {
           return MessageAttachmentType.file;
         case 'audio':
           return MessageAttachmentType.audio;
+        case 'blog':
+          return MessageAttachmentType.blog;
       }
     }
     return MessageAttachmentType.image;
@@ -70,6 +73,16 @@ class MessageAttachment {
   final String? tripDuration;
   final String? tripDestination;
 
+  // Blog preview
+  final String? blogId;
+  final String? blogTitle;
+  final String? blogCoverUrl;
+  final String? blogCategory;
+  final String? blogAuthorName;
+  final String? blogAuthorAvatar;
+  final int? blogReadTimeMinutes;
+  final String? blogSummary;
+
   const MessageAttachment({
     required this.id,
     required this.attachmentType,
@@ -95,6 +108,14 @@ class MessageAttachment {
     this.tripCoverUrl,
     this.tripDuration,
     this.tripDestination,
+    this.blogId,
+    this.blogTitle,
+    this.blogCoverUrl,
+    this.blogCategory,
+    this.blogAuthorName,
+    this.blogAuthorAvatar,
+    this.blogReadTimeMinutes,
+    this.blogSummary,
   });
 
   factory MessageAttachment.fromJson(Map<String, dynamic> json) {
@@ -123,6 +144,14 @@ class MessageAttachment {
       tripCoverUrl: json['tripCoverUrl']?.toString(),
       tripDuration: json['tripDuration']?.toString(),
       tripDestination: json['tripDestination']?.toString(),
+      blogId: json['blogId']?.toString(),
+      blogTitle: json['blogTitle']?.toString(),
+      blogCoverUrl: json['blogCoverUrl']?.toString() ?? json['blogImage']?.toString(),
+      blogCategory: json['blogCategory']?.toString() ?? json['category']?.toString(),
+      blogAuthorName: json['blogAuthorName']?.toString() ?? json['authorName']?.toString(),
+      blogAuthorAvatar: json['blogAuthorAvatar']?.toString() ?? json['authorAvatar']?.toString(),
+      blogReadTimeMinutes: (json['blogReadTimeMinutes'] as num?)?.toInt(),
+      blogSummary: json['blogSummary']?.toString(),
     );
   }
 
@@ -152,6 +181,14 @@ class MessageAttachment {
       'tripCoverUrl': tripCoverUrl,
       'tripDuration': tripDuration,
       'tripDestination': tripDestination,
+      'blogId': blogId,
+      'blogTitle': blogTitle,
+      'blogCoverUrl': blogCoverUrl,
+      'blogCategory': blogCategory,
+      'blogAuthorName': blogAuthorName,
+      'blogAuthorAvatar': blogAuthorAvatar,
+      'blogReadTimeMinutes': blogReadTimeMinutes,
+      'blogSummary': blogSummary,
     };
   }
 }
@@ -319,11 +356,18 @@ class InboxItem {
   });
 
   factory InboxItem.fromJson(Map<String, dynamic> json) {
+    final rawIsGroup = json['isGroup'] == true ||
+        json['type']?.toString().toLowerCase() == 'group' ||
+        json['type'] == 2 ||
+        json['roomType']?.toString().toLowerCase() == 'group' ||
+        json['roomType'] == 2 ||
+        (json['membersCount'] != null && (json['membersCount'] as num) > 2);
+
     return InboxItem(
       roomId: (json['roomId'] as num?)?.toInt() ?? (json['id'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? 'Hội thoại',
       avatarUrl: json['avatarUrl']?.toString() ?? json['avatar']?.toString(),
-      isGroup: json['isGroup'] == true,
+      isGroup: rawIsGroup,
       lastMessage: json['lastMessage']?.toString(),
       lastMessageAt: json['lastMessageAt'] != null
           ? DateTime.tryParse(json['lastMessageAt'].toString())
@@ -365,6 +409,8 @@ class ChatRoomMember {
   final String? avatarUrl;
   final String? email;
   final DateTime joinedAt;
+  final String role;
+  final bool isAdmin;
 
   const ChatRoomMember({
     required this.userId,
@@ -372,9 +418,14 @@ class ChatRoomMember {
     this.avatarUrl,
     this.email,
     required this.joinedAt,
+    this.role = 'Member',
+    this.isAdmin = false,
   });
 
   factory ChatRoomMember.fromJson(Map<String, dynamic> json) {
+    final roleStr = json['role']?.toString() ?? (json['isAdmin'] == true ? 'Admin' : 'Member');
+    final isAdminBool = json['isAdmin'] == true || roleStr.toLowerCase() == 'admin';
+
     return ChatRoomMember(
       userId: (json['userId'] as num?)?.toInt() ?? (json['id'] as num?)?.toInt() ?? 0,
       name: json['name']?.toString() ?? json['fullName']?.toString() ?? 'Thành viên',
@@ -383,6 +434,8 @@ class ChatRoomMember {
       joinedAt: json['joinedAt'] != null
           ? DateTime.tryParse(json['joinedAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
+      role: roleStr,
+      isAdmin: isAdminBool,
     );
   }
 }

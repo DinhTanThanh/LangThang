@@ -38,6 +38,12 @@ class MapboxRouteStep {
   String get formattedTime {
     final minutes = (durationSeconds / 60).round();
     if (minutes < 1) return '< 1 ph';
+    if (minutes >= 1440) {
+      final days = minutes ~/ 1440;
+      final remHours = (minutes % 1440) ~/ 60;
+      final remMins = minutes % 60;
+      return '$days ngày ${remHours > 0 ? '$remHours giờ ' : ''}${remMins > 0 ? '$remMins ph' : ''}'.trim();
+    }
     if (minutes >= 60) {
       final hours = minutes ~/ 60;
       final remainingMins = minutes % 60;
@@ -72,6 +78,12 @@ class MapboxRouteResult {
   String get formattedDuration {
     final minutes = (durationSeconds / 60).round();
     if (minutes < 1) return '< 1 phút';
+    if (minutes >= 1440) {
+      final days = minutes ~/ 1440;
+      final remHours = (minutes % 1440) ~/ 60;
+      final remMins = minutes % 60;
+      return '$days ngày ${remHours > 0 ? '$remHours giờ ' : ''}${remMins > 0 ? '$remMins phút' : ''}'.trim();
+    }
     if (minutes >= 60) {
       final hours = minutes ~/ 60;
       final remainingMins = minutes % 60;
@@ -85,6 +97,8 @@ class MapboxService {
   static const String defaultToken =
       'pk.eyJ1IjoiZGluaHRhbnRoYW5oMTkiLCJhIjoiY210bnNsZ2V2MG14NzJ5cHN1ZjhzMjU3MiJ9.qM8oAp0Hb9ThJlBzvn0Qtw';
 
+  static final Map<String, MapboxRouteResult> _routeCache = {};
+
   /// Call Mapbox Directions API v5 to get the turn-by-turn route with polyline
   static Future<MapboxRouteResult?> getDirections({
     required double originLat,
@@ -94,8 +108,12 @@ class MapboxService {
     String profile = 'driving', // 'driving', 'walking', 'cycling'
     String token = defaultToken,
   }) async {
+    final cacheKey = '$profile:${originLat.toStringAsFixed(4)},${originLng.toStringAsFixed(4)};${destLat.toStringAsFixed(4)},${destLng.toStringAsFixed(4)}';
+    if (_routeCache.containsKey(cacheKey)) {
+      return _routeCache[cacheKey];
+    }
+
     try {
-      // We request geometries=polyline (Polyline5 format) for static map overlays
       final url = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/$profile/$originLng,$originLat;$destLng,$destLat'
         '?alternatives=false&geometries=polyline&steps=true&overview=full&language=vi&access_token=$token',
@@ -112,19 +130,16 @@ class MapboxService {
           final double distance = (firstRoute['distance'] as num?)?.toDouble() ?? 0.0;
           final double duration = (firstRoute['duration'] as num?)?.toDouble() ?? 0.0;
 
-          // Polyline string from Mapbox (e.g. `_ibE_seK_c@...`)
           String? polylineStr;
           final geometry = firstRoute['geometry'];
           if (geometry is String) {
             polylineStr = geometry;
           }
 
-          // Decode polyline into [lng, lat] coordinates
           final List<List<double>> coordinates = polylineStr != null
               ? _decodePolyline(polylineStr)
               : [];
 
-          // Parse Steps
           final List<MapboxRouteStep> steps = [];
           final legs = firstRoute['legs'] as List<dynamic>? ?? [];
           if (legs.isNotEmpty) {
@@ -136,16 +151,17 @@ class MapboxService {
             }
           }
 
-          return MapboxRouteResult(
+          final result = MapboxRouteResult(
             distanceMeters: distance,
             durationSeconds: duration,
             coordinates: coordinates,
             steps: steps,
             encodedPolyline: polylineStr,
           );
+
+          _routeCache[cacheKey] = result;
+          return result;
         }
-      } else {
-        debugPrint('[MapboxService] Directions API error: ${response.statusCode} - ${response.body}');
       }
     } catch (e) {
       debugPrint('[MapboxService] Directions API exception: $e');

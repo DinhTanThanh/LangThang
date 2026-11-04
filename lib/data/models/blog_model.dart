@@ -1,31 +1,39 @@
 class BlogAuthorModel {
+  final String id;
   final String name;
   final String avatar;
   final String role;
   final String rank;
+  final String bio;
 
   const BlogAuthorModel({
+    this.id = '',
     required this.name,
     this.avatar = '',
     this.role = 'Tác giả',
     this.rank = 'Thổ địa',
+    this.bio = '',
   });
 
   factory BlogAuthorModel.fromJson(Map<String, dynamic> json) {
     return BlogAuthorModel(
+      id: json['id']?.toString() ?? json['userId']?.toString() ?? '',
       name: json['name']?.toString() ?? json['fullName']?.toString() ?? 'Tác giả',
       avatar: json['avatar']?.toString() ?? json['avatarUrl']?.toString() ?? '',
       role: json['role']?.toString() ?? 'Tác giả',
       rank: json['rank']?.toString() ?? 'Thổ địa',
+      bio: json['bio']?.toString() ?? '',
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'name': name,
       'avatar': avatar,
       'role': role,
       'rank': rank,
+      'bio': bio,
     };
   }
 }
@@ -95,6 +103,7 @@ class BlogModel {
   final String region;
   final String province;
   final List<BlogMentionedPlaceModel> mentionedPlaces;
+  final int status; // 0: Bản nháp, 1: Đã xuất bản, 2: Chờ duyệt
 
   const BlogModel({
     required this.id,
@@ -117,6 +126,7 @@ class BlogModel {
     this.region = 'Tất cả',
     this.province = '',
     this.mentionedPlaces = const [],
+    this.status = 1,
   });
 
   String get authorName => author.name;
@@ -204,6 +214,7 @@ class BlogModel {
       region: json['region']?.toString() ?? 'Tất cả',
       province: json['province']?.toString() ?? '',
       mentionedPlaces: placesList,
+      status: json['status'] is num ? (json['status'] as num).toInt() : (int.tryParse(json['status']?.toString() ?? '1') ?? 1),
     );
   }
 
@@ -229,6 +240,7 @@ class BlogModel {
       'region': region,
       'province': province,
       'mentionedPlaces': mentionedPlaces.map((p) => p.toJson()).toList(),
+      'status': status,
     };
   }
 
@@ -253,6 +265,7 @@ class BlogModel {
     String? region,
     String? province,
     List<BlogMentionedPlaceModel>? mentionedPlaces,
+    int? status,
   }) {
     return BlogModel(
       id: id ?? this.id,
@@ -275,6 +288,7 @@ class BlogModel {
       region: region ?? this.region,
       province: province ?? this.province,
       mentionedPlaces: mentionedPlaces ?? this.mentionedPlaces,
+      status: status ?? this.status,
     );
   }
 }

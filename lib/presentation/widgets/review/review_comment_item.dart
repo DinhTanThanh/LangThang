@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/review_model.dart';
 import '../../../data/models/user_model.dart';
+import '../../../data/models/report_model.dart';
+import '../../screens/profile/user_profile_screen.dart';
+import '../report/report_modal_sheet.dart';
 
 class ReviewCommentItem extends StatefulWidget {
   final ReviewCommentModel comment;
   final bool isAuthenticated;
   final UserModel? currentUser;
+  final Future<bool> Function()? onRequireAuth;
   final Future<bool> Function(int parentId, String content) onReplySubmit;
   final Future<bool> Function(int commentId, String content) onCommentUpdate;
   final Future<bool> Function(int commentId) onCommentDelete;
@@ -15,6 +19,7 @@ class ReviewCommentItem extends StatefulWidget {
     required this.comment,
     required this.isAuthenticated,
     this.currentUser,
+    this.onRequireAuth,
     required this.onReplySubmit,
     required this.onCommentUpdate,
     required this.onCommentDelete,
@@ -62,12 +67,10 @@ class _ReviewCommentItemState extends State<ReviewCommentItem> {
         (widget.comment.userId == 'u_current');
   }
 
-  void _handleOpenReply({String? mentionName}) {
+  Future<void> _handleOpenReply({String? mentionName}) async {
     if (!widget.isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng đăng nhập để gửi phản hồi.')),
-      );
-      return;
+      final ok = await widget.onRequireAuth?.call() ?? false;
+      if (!ok) return;
     }
     setState(() {
       _isReplying = true;
@@ -82,6 +85,11 @@ class _ReviewCommentItemState extends State<ReviewCommentItem> {
   Future<void> _handleSendReply() async {
     final text = _replyController.text.trim();
     if (text.isEmpty) return;
+
+    if (!widget.isAuthenticated) {
+      final ok = await widget.onRequireAuth?.call() ?? false;
+      if (!ok) return;
+    }
 
     setState(() => _isSubmittingReply = true);
     final success = await widget.onReplySubmit(widget.comment.id, text);
@@ -160,20 +168,31 @@ class _ReviewCommentItemState extends State<ReviewCommentItem> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 15,
-                backgroundColor: hasAvatar ? Colors.transparent : const Color(0xFFD1FAE5),
-                backgroundImage: hasAvatar ? NetworkImage(comment.userAvatar!) : null,
-                child: !hasAvatar
-                    ? Text(
-                        comment.userInitials,
-                        style: const TextStyle(
-                          color: Color(0xFF065F46),
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      )
-                    : null,
+              InkWell(
+                onTap: () {
+                  UserProfileScreen.navigate(
+                    context,
+                    userId: comment.userId.isNotEmpty ? comment.userId : null,
+                    userName: comment.userName,
+                    userAvatar: comment.userAvatar,
+                  );
+                },
+                borderRadius: BorderRadius.circular(15),
+                child: CircleAvatar(
+                  radius: 15,
+                  backgroundColor: hasAvatar ? Colors.transparent : const Color(0xFFD1FAE5),
+                  backgroundImage: hasAvatar ? NetworkImage(comment.userAvatar!) : null,
+                  child: !hasAvatar
+                      ? Text(
+                          comment.userInitials,
+                          style: const TextStyle(
+                            color: Color(0xFF065F46),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        )
+                      : null,
+                ),
               ),
               const SizedBox(width: 8),
 
@@ -242,6 +261,30 @@ class _ReviewCommentItemState extends State<ReviewCommentItem> {
                               ),
                             ),
                           ],
+                          if (!_isOwner) ...[
+                            const SizedBox(width: 8),
+                            const Text('•', style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 11)),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () {
+                                ReportModalSheet.show(
+                                  context,
+                                  targetInfo: ReportTargetInfo.forComment(
+                                    id: comment.id,
+                                    userName: comment.userName,
+                                    commentContent: comment.content,
+                                  ),
+                                );
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Text(
+                                  'Báo cáo',
+                                  style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -276,6 +319,8 @@ class _ReviewCommentItemState extends State<ReviewCommentItem> {
                       parentComment: comment,
                       isAuthenticated: widget.isAuthenticated,
                       currentUser: widget.currentUser,
+                      onOpenReply: (mention) => _handleOpenReply(mentionName: mention),
+                      onRequireAuth: widget.onRequireAuth,
                       onReplySubmit: widget.onReplySubmit,
                       onCommentUpdate: widget.onCommentUpdate,
                       onCommentDelete: widget.onCommentDelete,
@@ -303,12 +348,22 @@ class _ReviewCommentItemState extends State<ReviewCommentItem> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                comment.userName,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
+              InkWell(
+                onTap: () {
+                  UserProfileScreen.navigate(
+                    context,
+                    userId: comment.userId.isNotEmpty ? comment.userId : null,
+                    userName: comment.userName,
+                    userAvatar: comment.userAvatar,
+                  );
+                },
+                child: Text(
+                  comment.userName,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
                 ),
               ),
               const SizedBox(width: 6),
@@ -508,6 +563,8 @@ class _ReplyItemRow extends StatefulWidget {
   final ReviewCommentModel parentComment;
   final bool isAuthenticated;
   final UserModel? currentUser;
+  final void Function(String mentionName)? onOpenReply;
+  final Future<bool> Function()? onRequireAuth;
   final Future<bool> Function(int parentId, String content) onReplySubmit;
   final Future<bool> Function(int commentId, String content) onCommentUpdate;
   final Future<bool> Function(int commentId) onCommentDelete;
@@ -517,6 +574,8 @@ class _ReplyItemRow extends StatefulWidget {
     required this.parentComment,
     required this.isAuthenticated,
     this.currentUser,
+    this.onOpenReply,
+    this.onRequireAuth,
     required this.onReplySubmit,
     required this.onCommentUpdate,
     required this.onCommentDelete,
@@ -611,20 +670,31 @@ class _ReplyItemRowState extends State<_ReplyItemRow> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: hasAvatar ? Colors.transparent : const Color(0xFFE0E7FF),
-            backgroundImage: hasAvatar ? NetworkImage(reply.userAvatar!) : null,
-            child: !hasAvatar
-                ? Text(
-                    reply.userInitials,
-                    style: const TextStyle(
-                      color: Color(0xFF3730A3),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  )
-                : null,
+          InkWell(
+            onTap: () {
+              UserProfileScreen.navigate(
+                context,
+                userId: reply.userId.isNotEmpty ? reply.userId : null,
+                userName: reply.userName,
+                userAvatar: reply.userAvatar,
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: CircleAvatar(
+              radius: 12,
+              backgroundColor: hasAvatar ? Colors.transparent : const Color(0xFFE0E7FF),
+              backgroundImage: hasAvatar ? NetworkImage(reply.userAvatar!) : null,
+              child: !hasAvatar
+                  ? Text(
+                      reply.userInitials,
+                      style: const TextStyle(
+                        color: Color(0xFF3730A3),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    )
+                  : null,
+            ),
           ),
           const SizedBox(width: 8),
 
@@ -706,12 +776,22 @@ class _ReplyItemRowState extends State<_ReplyItemRow> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              reply.userName,
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
+                            InkWell(
+                              onTap: () {
+                                UserProfileScreen.navigate(
+                                  context,
+                                  userId: reply.userId.isNotEmpty ? reply.userId : null,
+                                  userName: reply.userName,
+                                  userAvatar: reply.userAvatar,
+                                );
+                              },
+                              child: Text(
+                                reply.userName,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF111827),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 5),
@@ -734,36 +814,75 @@ class _ReplyItemRowState extends State<_ReplyItemRow> {
                     ),
                   ),
 
-                if (!_isEditing && _isOwner) ...[
+                if (!_isEditing) ...[
                   const SizedBox(height: 2),
                   Row(
                     children: [
                       GestureDetector(
-                        onTap: () => setState(() {
-                          _isEditing = true;
-                          _editController.text = reply.content;
-                        }),
+                        onTap: () => widget.onOpenReply?.call(reply.userName),
                         child: const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                           child: Text(
-                            'Sửa',
-                            style: TextStyle(fontSize: 10.5, color: Color(0xFF6B7280), fontWeight: FontWeight.w600),
+                            'Phản hồi',
+                            style: TextStyle(fontSize: 10.5, color: Color(0xFF059669), fontWeight: FontWeight.w600),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      const Text('•', style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 10)),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: _handleDeleteReply,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                          child: Text(
-                            'Xóa',
-                            style: TextStyle(fontSize: 10.5, color: Color(0xFFE11D48), fontWeight: FontWeight.w600),
+                      if (_isOwner) ...[
+                        const SizedBox(width: 6),
+                        const Text('•', style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 10)),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => setState(() {
+                            _isEditing = true;
+                            _editController.text = reply.content;
+                          }),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              'Sửa',
+                              style: TextStyle(fontSize: 10.5, color: Color(0xFF6B7280), fontWeight: FontWeight.w600),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        const Text('•', style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 10)),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: _handleDeleteReply,
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              'Xóa',
+                              style: TextStyle(fontSize: 10.5, color: Color(0xFFE11D48), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (!_isOwner) ...[
+                        const SizedBox(width: 6),
+                        const Text('•', style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 10)),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            ReportModalSheet.show(
+                              context,
+                              targetInfo: ReportTargetInfo.forComment(
+                                id: reply.id,
+                                userName: reply.userName,
+                                commentContent: reply.content,
+                              ),
+                            );
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Text(
+                              'Báo cáo',
+                              style: TextStyle(fontSize: 10.5, color: Color(0xFF9CA3AF), fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],

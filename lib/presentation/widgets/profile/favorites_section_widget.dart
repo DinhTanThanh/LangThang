@@ -3,10 +3,10 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/favorite_model.dart';
 import '../../../data/models/place_model.dart';
 import '../../../data/models/blog_model.dart';
+import '../../../data/models/itinerary_model.dart';
 import '../../../data/services/favorite_api_service.dart';
 import '../../screens/destinations/place_detail_screen.dart';
-import '../../screens/food/food_screen.dart';
-import '../../screens/itineraries/itineraries_screen.dart';
+import '../../screens/itineraries/itinerary_detail_screen.dart';
 import '../../screens/blog/blog_detail_screen.dart';
 
 class FavoritesSectionWidget extends StatefulWidget {
@@ -38,10 +38,18 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
   void initState() {
     super.initState();
     _loadFavorites();
+    FavoriteApiService.favoritesNotifier.addListener(_onGlobalFavoritesChanged);
+  }
+
+  void _onGlobalFavoritesChanged() {
+    if (mounted) {
+      _loadFavorites();
+    }
   }
 
   @override
   void dispose() {
+    FavoriteApiService.favoritesNotifier.removeListener(_onGlobalFavoritesChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -65,10 +73,30 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
       _allFavorites.removeWhere((f) => f.targetType == item.targetType && f.targetId == item.targetId);
     });
 
-    await _favoriteService.removeFavorite(
+    final res = await _favoriteService.removeFavorite(
       targetType: item.targetType,
       targetId: item.targetId,
     );
+
+    if (!res.success) {
+      if (mounted) {
+        setState(() {
+          if (removedIndex >= 0 && removedIndex <= _allFavorites.length) {
+            _allFavorites.insert(removedIndex, item);
+          } else {
+            _allFavorites.add(item);
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message.isNotEmpty ? res.message : 'Không thể bỏ lưu mục này.'),
+            backgroundColor: const Color(0xFFDC2626),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
 
     widget.onFavoriteChanged?.call();
 
@@ -108,22 +136,22 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
   }
 
   void _navigateToDetail(FavoriteItemModel item) async {
-    if (item.targetType == 1) {
-      // Địa điểm -> PlaceDetailScreen
+    if (item.targetType == 1 || item.targetType == 2) {
+      // Địa điểm / Ẩm thực -> PlaceDetailScreen
       final place = PlaceModel(
         id: item.targetId,
         name: item.title,
-        category: item.categoryTag.isNotEmpty ? item.categoryTag : 'Danh lam thắng cảnh',
+        category: item.categoryTag.isNotEmpty ? item.categoryTag : (item.targetType == 2 ? 'Ẩm thực & Cafe' : 'Danh lam thắng cảnh'),
         location: item.subtitle,
         region: 'Miền Bắc',
         province: item.subtitle,
-        type: 'Điểm tham quan',
+        type: item.targetType == 2 ? 'Ẩm thực' : 'Điểm tham quan',
         rating: item.rating,
         reviews: item.reviewCount,
         price: item.price ?? 'Miễn phí',
         priceMax: 0,
         priceRange: item.price ?? 'Miễn phí',
-        hours: '07:30 – 17:30',
+        hours: '07:30 – 22:00',
         status: 'Đang mở cửa',
         desc: item.subtitle,
         detailedDescription: item.subtitle,
@@ -143,18 +171,34 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
         MaterialPageRoute(builder: (context) => PlaceDetailScreen(place: place)),
       );
       _loadFavorites();
-    } else if (item.targetType == 2) {
-      // Ẩm thực -> FoodScreen
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const FoodScreen()),
-      );
     } else if (item.targetType == 3) {
-      // Hành trình -> ItinerariesScreen
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const ItinerariesScreen()),
+      // Hành trình -> Mở trực tiếp màn hình chi tiết lịch trình ItineraryDetailScreen
+      final itinerary = ItineraryModel(
+        id: item.targetId,
+        title: item.title,
+        destination: item.subtitle.isNotEmpty ? item.subtitle : 'Việt Nam',
+        region: 'Việt Nam',
+        duration: 'Lộ trình khám phá',
+        daysCount: 1,
+        nightsCount: 0,
+        style: item.categoryTag.isNotEmpty ? item.categoryTag : 'Khám phá',
+        coverUrl: item.coverImg,
+        isSaved: true,
+        author: const ItineraryAuthorModel(
+          name: 'Tác giả',
+          avatar: '',
+        ),
       );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ItineraryDetailScreen(
+            itinerary: itinerary,
+            initialIsSaved: true,
+          ),
+        ),
+      );
+      _loadFavorites();
     } else if (item.targetType == 4) {
       // Bài viết -> Mở trực tiếp màn hình đọc bài viết BlogDetailScreen
       final blog = BlogModel(
@@ -176,13 +220,14 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
 
   List<FavoriteItemModel> _getFilteredFavorites() {
     var list = _allFavorites.where((item) {
+      final notTrip = item.targetType != 3;
       final matchesTab = _selectedTab == FavoriteTargetType.all || item.targetType == _selectedTab.value;
       final query = _searchQuery.toLowerCase().trim();
       final matchesSearch = query.isEmpty ||
           item.title.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
           item.categoryTag.toLowerCase().contains(query);
-      return matchesTab && matchesSearch;
+      return notTrip && matchesTab && matchesSearch;
     }).toList();
 
     if (_sortBy == 'rating') {
@@ -195,263 +240,267 @@ class _FavoritesSectionWidgetState extends State<FavoritesSectionWidget> {
   }
 
   int _getCountForType(FavoriteTargetType type) {
-    if (type == FavoriteTargetType.all) return _allFavorites.length;
-    return _allFavorites.where((f) => f.targetType == type.value).length;
+    final validList = _allFavorites.where((f) => f.targetType != 3);
+    if (type == FavoriteTargetType.all) return validList.length;
+    return validList.where((f) => f.targetType == type.value).length;
   }
 
   @override
   Widget build(BuildContext context) {
     final filtered = _getFilteredFavorites();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ===== Header Section =====
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Địa điểm & Mục đã lưu',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_allFavorites.length} mục đã lưu trong tài khoản của bạn',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    onPressed: _loadFavorites,
-                    icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF64748B)),
-                    tooltip: 'Làm mới',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-
-              // ===== Category Pills (All, Place, Food, Itinerary, Blog) =====
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: Row(
-                  children: FavoriteTargetType.values.map((type) {
-                    final isSelected = _selectedTab == type;
-                    final count = _getCountForType(type);
-
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: InkWell(
-                        onTap: () => setState(() => _selectedTab = type),
-                        borderRadius: BorderRadius.circular(12),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                          decoration: BoxDecoration(
-                            color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected ? const Color(0xFF047857) : const Color(0xFFE2E8F0),
-                              width: isSelected ? 1.5 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                type.icon,
-                                size: 14,
-                                color: isSelected ? const Color(0xFF047857) : const Color(0xFF64748B),
-                              ),
-                              const SizedBox(width: 5),
-                              Text(
-                                type.label,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                  color: isSelected ? const Color(0xFF047857) : const Color(0xFF334155),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? const Color(0xFF047857) : const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '$count',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: isSelected ? Colors.white : const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // ===== Search, Sort & View Mode Switcher =====
-              Row(
-                children: [
-                  // Search Box
-                  Expanded(
-                    child: Container(
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        onChanged: (val) => setState(() => _searchQuery = val),
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
-                        decoration: InputDecoration(
-                          hintText: 'Tìm trong mục đã lưu...',
-                          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                          prefixIcon: const Icon(Icons.search_rounded, size: 16, color: Color(0xFF94A3B8)),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? GestureDetector(
-                                  onTap: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                  child: const Icon(Icons.clear_rounded, size: 16, color: Color(0xFF94A3B8)),
-                                )
-                              : null,
-                          border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 9),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Sort Menu
-                  PopupMenuButton<String>(
-                    initialValue: _sortBy,
-                    onSelected: (val) => setState(() => _sortBy = val),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    child: Container(
-                      height: 38,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.sort_rounded, size: 16, color: Color(0xFF64748B)),
-                          const SizedBox(width: 4),
-                          Text(
-                            _sortBy == 'rating'
-                                ? 'Đánh giá'
-                                : _sortBy == 'name'
-                                    ? 'A-Z'
-                                    : 'Mới nhất',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'newest',
-                        child: Text('Mới lưu gần đây', style: TextStyle(fontSize: 12)),
-                      ),
-                      const PopupMenuItem(
-                        value: 'rating',
-                        child: Text('Đánh giá cao nhất', style: TextStyle(fontSize: 12)),
-                      ),
-                      const PopupMenuItem(
-                        value: 'name',
-                        child: Text('Theo tên A - Z', style: TextStyle(fontSize: 12)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Grid / List View Toggle
-                  Container(
-                    height: 38,
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Row(
-                      children: [
-                        _buildViewToggleBtn(
-                          icon: Icons.grid_view_rounded,
-                          isSelected: _isGridView,
-                          onTap: () => setState(() => _isGridView = true),
-                        ),
-                        _buildViewToggleBtn(
-                          icon: Icons.view_list_rounded,
-                          isSelected: !_isGridView,
-                          onTap: () => setState(() => _isGridView = false),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // ===== Content Body =====
-        if (_isLoading)
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ===== Header Section =====
           Container(
-            padding: const EdgeInsets.all(48),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
-            child: const Center(
-              child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Địa điểm & Mục đã lưu',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${_allFavorites.where((f) => f.targetType != 3).length} mục đã lưu trong tài khoản của bạn',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      onPressed: _loadFavorites,
+                      icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF64748B)),
+                      tooltip: 'Làm mới',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // ===== Category Pills (All, Place, Food, Itinerary, Blog) =====
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: FavoriteTargetType.values.map((type) {
+                      final isSelected = _selectedTab == type;
+                      final count = _getCountForType(type);
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: InkWell(
+                          onTap: () => setState(() => _selectedTab = type),
+                          borderRadius: BorderRadius.circular(12),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 150),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0xFFECFDF5) : Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFF047857) : const Color(0xFFE2E8F0),
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  type.icon,
+                                  size: 14,
+                                  color: isSelected ? const Color(0xFF047857) : const Color(0xFF64748B),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  type.label,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                    color: isSelected ? const Color(0xFF047857) : const Color(0xFF334155),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? const Color(0xFF047857) : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '$count',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected ? Colors.white : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ===== Search, Sort & View Mode Switcher =====
+                Row(
+                  children: [
+                    // Search Box
+                    Expanded(
+                      child: Container(
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (val) => setState(() => _searchQuery = val),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF0F172A)),
+                          decoration: InputDecoration(
+                            hintText: 'Tìm trong mục đã lưu...',
+                            hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                            prefixIcon: const Icon(Icons.search_rounded, size: 16, color: Color(0xFF94A3B8)),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? GestureDetector(
+                                    onTap: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                    child: const Icon(Icons.clear_rounded, size: 16, color: Color(0xFF94A3B8)),
+                                  )
+                                : null,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 9),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Sort Menu
+                    PopupMenuButton<String>(
+                      initialValue: _sortBy,
+                      onSelected: (val) => setState(() => _sortBy = val),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      child: Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.sort_rounded, size: 16, color: Color(0xFF64748B)),
+                            const SizedBox(width: 4),
+                            Text(
+                              _sortBy == 'rating'
+                                  ? 'Đánh giá'
+                                  : _sortBy == 'name'
+                                      ? 'A-Z'
+                                      : 'Mới nhất',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF334155)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'newest',
+                          child: Text('Mới lưu gần đây', style: TextStyle(fontSize: 12)),
+                        ),
+                        const PopupMenuItem(
+                          value: 'rating',
+                          child: Text('Đánh giá cao nhất', style: TextStyle(fontSize: 12)),
+                        ),
+                        const PopupMenuItem(
+                          value: 'name',
+                          child: Text('Theo tên A - Z', style: TextStyle(fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Grid / List View Toggle
+                    Container(
+                      height: 38,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        children: [
+                          _buildViewToggleBtn(
+                            icon: Icons.grid_view_rounded,
+                            isSelected: _isGridView,
+                            onTap: () => setState(() => _isGridView = true),
+                          ),
+                          _buildViewToggleBtn(
+                            icon: Icons.view_list_rounded,
+                            isSelected: !_isGridView,
+                            onTap: () => setState(() => _isGridView = false),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          )
-        else if (filtered.isEmpty)
-          _buildEmptyState()
-        else if (_isGridView)
-          _buildGridView(filtered)
-        else
-          _buildListView(filtered),
-      ],
+          ),
+          const SizedBox(height: 16),
+
+          // ===== Content Body =====
+          if (_isLoading)
+            Container(
+              padding: const EdgeInsets.all(48),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+              ),
+            )
+          else if (filtered.isEmpty)
+            _buildEmptyState()
+          else if (_isGridView)
+            _buildGridView(filtered)
+          else
+            _buildListView(filtered),
+        ],
+      ),
     );
   }
 

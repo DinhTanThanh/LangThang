@@ -1,20 +1,36 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/place_filter_dto.dart';
 
-class RegionShowcaseCard extends StatelessWidget {
+class RegionShowcaseCard extends StatefulWidget {
   final RegionDto region;
   final Function(String regionName, String? provinceName)? onProvinceTap;
   final Function(RegionDto region)? onExploreRegionTap;
+  final bool initialExpanded;
 
   const RegionShowcaseCard({
     super.key,
     required this.region,
     this.onProvinceTap,
     this.onExploreRegionTap,
+    this.initialExpanded = false,
   });
 
   @override
+  State<RegionShowcaseCard> createState() => _RegionShowcaseCardState();
+}
+
+class _RegionShowcaseCardState extends State<RegionShowcaseCard> {
+  late bool _isExpanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _isExpanded = widget.initialExpanded;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final region = widget.region;
     final heroImage = (region.imageUrl != null && region.imageUrl!.isNotEmpty)
         ? region.imageUrl!
         : (region.id == 1
@@ -24,7 +40,7 @@ class RegionShowcaseCard extends StatelessWidget {
                 : 'https://images.unsplash.com/photo-1583417319070-4a69db38a482?q=80&w=1200&auto=format&fit=crop'));
 
     final provinces = region.provinces;
-    final displayProvinces = provinces.take(8).toList();
+    final displayProvinces = provinces;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -47,7 +63,7 @@ class RegionShowcaseCard extends StatelessWidget {
           children: [
             // 1. HERO IMAGE WITH REGION TAGLINE OVERLAY
             GestureDetector(
-              onTap: () => onExploreRegionTap?.call(region),
+              onTap: () => widget.onExploreRegionTap?.call(region),
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Stack(
@@ -124,7 +140,7 @@ class RegionShowcaseCard extends StatelessWidget {
               ),
             ),
 
-            // 2. REGION DESCRIPTION & PROVINCES GRID
+            // 2. REGION DESCRIPTION & COLLAPSIBLE PROVINCES GRID
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -142,84 +158,148 @@ class RegionShowcaseCard extends StatelessWidget {
                   ),
 
                   if (displayProvinces.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Các tỉnh thành nổi bật:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF334155),
-                          ),
-                        ),
-                        Text(
-                          '${displayProvinces.length}/${provinces.length} tỉnh thành',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 14),
 
-                    // Grid 2 or 4 columns of provinces
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                        childAspectRatio: 2.6,
-                      ),
-                      itemCount: displayProvinces.length,
-                      itemBuilder: (context, index) {
-                        final prov = displayProvinces[index];
-                        return Material(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          child: InkWell(
-                            onTap: () => onProvinceTap?.call(region.name, prov.name),
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
+                    // Expandable Toggle Header
+                    Material(
+                      color: _isExpanded ? const Color(0xFFECFDF5) : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _isExpanded = !_isExpanded;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _isExpanded ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
                                 children: [
-                                  Text(
-                                    prov.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF0F172A),
-                                    ),
+                                  Icon(
+                                    Icons.location_city_rounded,
+                                    size: 16,
+                                    color: _isExpanded ? const Color(0xFF047857) : const Color(0xFF64748B),
                                   ),
-                                  const SizedBox(height: 1),
+                                  const SizedBox(width: 8),
                                   Text(
-                                    prov.placeCount > 0 ? '${prov.placeCount} địa điểm' : 'Khám phá ngay',
-                                    style: const TextStyle(
-                                      fontSize: 9.5,
-                                      color: Color(0xFF047857),
-                                      fontWeight: FontWeight.w600,
+                                    'Gợi ý các tỉnh thành nổi bật',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: _isExpanded ? const Color(0xFF065F46) : const Color(0xFF334155),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _isExpanded ? const Color(0xFFD1FAE5) : const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      '${provinces.length} tỉnh thành',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: _isExpanded ? const Color(0xFF047857) : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  AnimatedRotation(
+                                    turns: _isExpanded ? 0.5 : 0.0,
+                                    duration: const Duration(milliseconds: 250),
+                                    child: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 20,
+                                      color: _isExpanded ? const Color(0xFF047857) : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                        );
-                      },
+                        ),
+                      ),
+                    ),
+
+                    // Collapsible Grid with smooth animation
+                    AnimatedCrossFade(
+                      firstChild: const SizedBox.shrink(),
+                      secondChild: Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 2.6,
+                          ),
+                          itemCount: displayProvinces.length,
+                          itemBuilder: (context, index) {
+                            final prov = displayProvinces[index];
+                            return Material(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              child: InkWell(
+                                onTap: () => widget.onProvinceTap?.call(region.name, prov.name),
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(
+                                        prov.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 1),
+                                      Text(
+                                        prov.placeCount > 0
+                                            ? '${prov.placeCount} địa điểm'
+                                            : 'Khám phá ngay',
+                                        style: const TextStyle(
+                                          fontSize: 9.5,
+                                          color: Color(0xFF047857),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      crossFadeState:
+                          _isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                      duration: const Duration(milliseconds: 250),
                     ),
                   ],
 
@@ -229,7 +309,7 @@ class RegionShowcaseCard extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => onExploreRegionTap?.call(region),
+                      onPressed: () => widget.onExploreRegionTap?.call(region),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF004F32),
                         foregroundColor: Colors.white,
