@@ -103,7 +103,7 @@ class TravelApiService {
         queryParams['keyword'] = keyword.trim();
       }
 
-      final baseUri = Uri.parse('${ApiConstants.baseUrl}/api/v1/foods');
+      final baseUri = Uri.parse('${ApiConstants.baseUrl}/api/foods');
       final uri = queryParams.isEmpty ? baseUri : baseUri.replace(queryParameters: queryParams);
 
       final token = await AuthService().getAccessToken();
@@ -261,15 +261,45 @@ class TravelApiService {
     return MockData.places;
   }
 
-  /// Lấy danh sách tours trải nghiệm
+  /// Lấy danh sách tours trải nghiệm từ địa điểm thực tế
   Future<List<TourModel>> getTours() async {
-    await Future.delayed(const Duration(milliseconds: 200));
+    try {
+      final res = await PlaceApiService().searchPlaces(const PlaceFilterParams(pageSize: 10));
+      if (res.success && res.data != null && res.data!.isNotEmpty) {
+        return res.data!.map((p) => TourModel(
+          id: p.id.toString(),
+          title: p.name,
+          price: 'Miễn phí / Khám phá',
+          priceValue: 0,
+          rating: p.rating,
+          reviews: p.reviews,
+          imageUrl: p.img.isNotEmpty ? p.img : 'https://images.unsplash.com/photo-1528127269322-539801943592?w=900&h=600&fit=crop&auto=format',
+          badge: p.category.isNotEmpty ? p.category : 'Điểm đến',
+          location: p.province,
+          description: p.desc,
+        )).toList();
+      }
+    } catch (_) {}
     return MockData.tours;
   }
 
-  /// Lấy bộ sưu tập nổi bật
+  /// Lấy bộ sưu tập nổi bật từ cơ sở dữ liệu
   Future<CollectionModel> getFeaturedCollection() async {
-    await Future.delayed(const Duration(milliseconds: 200));
+    try {
+      final res = await PlaceApiService().getFeaturedCollections(count: 1);
+      if (res.success && res.data != null && res.data!.isNotEmpty) {
+        final col = res.data!.first;
+        final tours = await getTours();
+        return CollectionModel(
+          id: col.id.toString(),
+          title: col.title,
+          subtitle: col.description ?? 'Bộ sưu tập tuyển chọn',
+          description: col.description ?? '',
+          badge: 'Nổi bật',
+          tours: tours,
+        );
+      }
+    } catch (_) {}
     return MockData.featuredCollection;
   }
 

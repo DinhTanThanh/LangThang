@@ -117,8 +117,8 @@ class UserProfileApiService {
       if (keyword != null && keyword.trim().isNotEmpty) queryParams['keyword'] = keyword.trim();
 
       final response = await _getWithFallback(
-        '/api/v1/users/me/visit-logs',
         '/api/users/me/visit-logs',
+        '/api/v1/users/me/visit-logs',
         queryParams: queryParams,
       );
 
@@ -305,8 +305,8 @@ class UserProfileApiService {
 
     try {
       final res = await _deleteWithFallback(
-        '/api/v1/users/me/visit-logs/$id',
         '/api/users/me/visit-logs/$id',
+        '/api/v1/users/me/visit-logs/$id',
       );
       if (res != null && res.statusCode >= 200 && res.statusCode < 300) {
         return const ApiResponse<bool>(success: true, message: 'OK', data: true);
@@ -333,8 +333,8 @@ class UserProfileApiService {
           'Accept': 'application/json',
           'Authorization': 'Bearer $token',
         };
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/v1/users/me/visit-logs/$id/privacy');
-        final res = await http.patch(uri, headers: headers, body: jsonEncode({'privacy': privacy})).timeout(const Duration(seconds: 4));
+        final uri = Uri.parse('${ApiConstants.baseUrl}/api/users/me/visit-logs/$id');
+        final res = await http.put(uri, headers: headers, body: jsonEncode({'privacy': privacy})).timeout(const Duration(seconds: 4));
         if (res.statusCode >= 200 && res.statusCode < 300) {
           return const ApiResponse<bool>(success: true, message: 'OK', data: true);
         }
@@ -404,8 +404,8 @@ class UserProfileApiService {
       };
 
       final response = await _getWithFallback(
-        '/api/v1/users/me/reviews',
         '/api/users/me/reviews',
+        '/api/v1/users/me/reviews',
         queryParams: queryParams,
       );
 
@@ -484,8 +484,8 @@ class UserProfileApiService {
       };
 
       final response = await _getWithFallback(
-        '/api/v1/users/me/comments',
         '/api/users/me/comments',
+        '/api/v1/users/me/comments',
         queryParams: queryParams,
       );
 
@@ -588,8 +588,8 @@ class UserProfileApiService {
   Future<ApiResponse<bool>> deleteBlog(int id) async {
     try {
       final res = await _deleteWithFallback(
-        '/api/v1/blogs/$id',
         '/api/blogs/$id',
+        '/api/v1/blogs/$id',
       );
       if (res != null && res.statusCode >= 200 && res.statusCode < 300) {
         return ApiResponse<bool>(success: true, message: 'OK', data: true);
@@ -715,8 +715,8 @@ class UserProfileApiService {
     await _removeLocalProposal(id);
     try {
       final res = await _deleteWithFallback(
-        '/api/v1/proposals/$id',
         '/api/proposals/$id',
+        '/api/v1/proposals/$id',
       );
       if (res != null && res.statusCode >= 200 && res.statusCode < 300) {
         return ApiResponse<bool>(success: true, message: 'OK', data: true);

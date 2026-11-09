@@ -67,6 +67,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
   final TextEditingController _editController = TextEditingController();
 
   StreamSubscription<ChatMessage>? _messageSub;
+  Timer? _pollingTimer;
 
   // Share_Locations Messenger Color Palette
   static const Color messengerBlue = Color(0xFF0084FF);
@@ -107,10 +108,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
         _scrollToBottom();
       }
     });
+
+    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (mounted && _currentRoomId > 0 && !_isLoading && !_isSending) {
+        _silentPollMessages();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _messageSub?.cancel();
     _inputFocusNode.dispose();
     _textController.dispose();
@@ -206,6 +214,23 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
       });
       _scrollToBottom();
     }
+  }
+
+  Future<void> _silentPollMessages() async {
+    if (_currentRoomId <= 0) return;
+    try {
+      final res = await _chatService.getRoomMessages(_currentRoomId);
+      if (mounted && res.success && res.data != null) {
+        final newMsgs = res.data!;
+        if (newMsgs.length != _messages.length ||
+            (newMsgs.isNotEmpty && _messages.isNotEmpty && newMsgs.last.id != _messages.last.id)) {
+          setState(() {
+            _messages = newMsgs;
+          });
+          _scrollToBottom();
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _markRead() async {

@@ -28,6 +28,7 @@ import '../../widgets/home/personalized_recommendation_section.dart';
 import '../../widgets/home/personalized_food_section.dart';
 import '../../../data/models/food_model.dart';
 import '../../../data/services/recommendation_api_service.dart';
+import '../../../data/services/device_context_service.dart';
 import '../leaderboard/leaderboard_index_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -49,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<UserModel?>? _userSubscription;
 
   // Data States
+  DualContextHomeFeedResult? _dualFeed;
   List<CollectionDto> _featuredCollections = [];
   List<RegionDto> _regions = [];
   List<PlaceModel> _topRatedPlaces = [];
@@ -84,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    DeviceContextService().intentChangedNotifier.addListener(_onIntentChanged);
     _currentUser = AuthService().currentUser;
     _userSubscription = AuthService().onUserUpdated.listen((user) {
       if (mounted) {
@@ -94,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
         if (user != null) {
           NotificationApiService().getUnreadCount();
         }
-        _loadRecommendations();
+        _loadDualContextHomeFeed();
       }
     });
     if (_currentUser != null) {
@@ -102,6 +105,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     // Chỉ nạp nhanh những gì đang hiển thị trên màn hình đầu tiên (Viewport First)
     _loadInitialViewportData();
+  }
+
+  /// Lắng nghe sự kiện thay đổi ý định/gu danh mục thời gian thực (0ms reactive)
+  void _onIntentChanged() {
+    if (mounted) {
+      _loadDualContextHomeFeed();
+      if (_hasTriggeredCollections) {
+        _loadCollectionsAndRegionsLazy();
+      }
+    }
   }
 
   /// Lắng nghe vị trí cuộn: Lướt tới đâu thì tự động kích hoạt tải trước dữ liệu tới đó
@@ -128,32 +141,51 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Tải lại danh sách gợi ý khi trạng thái đăng nhập thay đổi
-  Future<void> _loadRecommendations() async {
+  /// Tải dữ liệu Dual-Context Home Feed (Kệ 1 GPS + Kệ 2 Intent)
+  Future<void> _loadDualContextHomeFeed() async {
     try {
-      final res = await RecommendationApiService().getPersonalizedPlaces(topK: 6);
+      final gps = await DeviceContextService().getCurrentGps();
+      final intentProvinces = await DeviceContextService().getRecentIntentProvinces();
+      final primaryIntent = intentProvinces.isNotEmpty ? intentProvinces.first : null;
+      final topCategoryIds = await DeviceContextService().getTopCategoryIds();
+
+      final feed = await RecommendationApiService().getDualContextHomeFeed(
+        lat: gps.lat,
+        lng: gps.lng,
+        intentProvinceId: primaryIntent?.provinceId,
+        intentProvinceIds: intentProvinces.map((p) => p.provinceId).toList(),
+        intentLabel: primaryIntent?.label,
+        topCategoryIds: topCategoryIds,
+        topK: 8,
+      );
+
       final foods = _hasTriggeredFoods
           ? await RecommendationApiService().getRecommendedFoods(topK: 8)
           : <FoodModel>[];
+
       if (mounted) {
         setState(() {
-          if (res.items.isNotEmpty) {
-            _recommendedPlaces = res.items;
+          _dualFeed = feed;
+          if (feed.shelf1NearbyPlaces.isNotEmpty) {
+            _recommendedPlaces = feed.shelf1NearbyPlaces;
+          } else if (feed.shelf2IntentPlaces.isNotEmpty) {
+            _recommendedPlaces = feed.shelf2IntentPlaces;
           }
-          _isPersonalizedRecommendations = (_currentUser != null);
+          _isPersonalizedRecommendations = (_currentUser != null) || feed.isPersonalized;
           if (foods.isNotEmpty) {
             _recommendedFoods = foods;
           }
         });
       }
     } catch (e) {
-      debugPrint('[HomeScreen] _loadRecommendations error: $e');
+      debugPrint('[HomeScreen] _loadDualContextHomeFeed error: $e');
     }
   }
 
   @override
   void dispose() {
     _scrollController.removeListener(_onScroll);
+    DeviceContextService().intentChangedNotifier.removeListener(_onIntentChanged);
     _scrollController.dispose();
     _userSubscription?.cancel();
     _heroSearchController.dispose();
@@ -183,10 +215,24 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
 
     try {
-      // Chỉ nạp 3 API siêu nhẹ cần cho khung nhìn ban đầu: SystemSettings, FilterOptions, và 6 địa điểm gợi ý
+      // Nạp song song SystemSettings, FilterOptions, và Dual-Context Home Feed
       final filterOptionsFuture = _placeApiService.getFilterOptions();
       final settingsFuture = _placeApiService.getSystemSettings();
-      final recommendationsFuture = RecommendationApiService().getPersonalizedPlaces(topK: 6);
+
+      final gps = await DeviceContextService().getCurrentGps();
+      final intentProvinces = await DeviceContextService().getRecentIntentProvinces();
+      final primaryIntent = intentProvinces.isNotEmpty ? intentProvinces.first : null;
+      final topCategoryIds = await DeviceContextService().getTopCategoryIds();
+
+      final recommendationsFuture = RecommendationApiService().getDualContextHomeFeed(
+        lat: gps.lat,
+        lng: gps.lng,
+        intentProvinceId: primaryIntent?.provinceId,
+        intentProvinceIds: intentProvinces.map((p) => p.provinceId).toList(),
+        intentLabel: primaryIntent?.label,
+        topCategoryIds: topCategoryIds,
+        topK: 8,
+      );
 
       final filterOptionsRes = await filterOptionsFuture;
       final settingsMap = await settingsFuture;
@@ -203,10 +249,13 @@ class _HomeScreenState extends State<HomeScreen> {
           _heroCategories = opts.categories;
         }
 
-        if (recommendationsRes.items.isNotEmpty) {
-          _recommendedPlaces = recommendationsRes.items;
+        _dualFeed = recommendationsRes;
+        if (recommendationsRes.shelf1NearbyPlaces.isNotEmpty) {
+          _recommendedPlaces = recommendationsRes.shelf1NearbyPlaces;
+        } else if (recommendationsRes.shelf2IntentPlaces.isNotEmpty) {
+          _recommendedPlaces = recommendationsRes.shelf2IntentPlaces;
         }
-        _isPersonalizedRecommendations = (_currentUser != null);
+        _isPersonalizedRecommendations = (_currentUser != null) || recommendationsRes.isPersonalized;
       }
     } catch (e) {
       debugPrint('[HomeScreen] _loadInitialViewportData error: $e');
@@ -251,7 +300,17 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isLoadingCollections = true);
 
     try {
-      final collectionsFuture = _placeApiService.getFeaturedCollections(count: 4);
+      final gps = await DeviceContextService().getCurrentGps();
+      final intentProvinces = await DeviceContextService().getRecentIntentProvinces();
+      final topCategoryIds = await DeviceContextService().getTopCategoryIds();
+
+      final collectionsFuture = _placeApiService.getFeaturedCollections(
+        count: 6,
+        lat: gps.lat,
+        lng: gps.lng,
+        intentProvinceIds: intentProvinces.map((p) => p.provinceId).toList(),
+        topCategoryIds: topCategoryIds,
+      );
       final regionsFuture = _placeApiService.getRegions();
 
       final collectionsRes = await collectionsFuture;
@@ -259,43 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       List<CollectionDto> populatedCollections = [];
       if (collectionsRes.data != null) {
-        final rawCollections = collectionsRes.data!;
-
-        // Tối ưu chạy song song Future.wait thay vì lặp tuần tự từng collection
-        final futures = rawCollections.map((col) async {
-          if (col.places.isNotEmpty) return col;
-          try {
-            final colPlacesRes = await _placeApiService.searchPlaces(
-              PlaceFilterParams(
-                keyword: col.title.contains('Bắc')
-                    ? 'Hà Nội'
-                    : (col.title.contains('Trung')
-                        ? 'Đà Nẵng'
-                        : (col.title.contains('Nam') ? 'Sài Gòn' : null)),
-                pageSize: 5,
-                sortBy: 'popular_desc',
-              ),
-            );
-            final placesList = (colPlacesRes.data != null && colPlacesRes.data!.isNotEmpty)
-                ? colPlacesRes.data!
-                : <PlaceModel>[];
-
-            return CollectionDto(
-              id: col.id,
-              title: col.title,
-              description: col.description,
-              isFeatured: col.isFeatured,
-              displayOrder: col.displayOrder,
-              coverUrl: col.coverUrl,
-              placeCount: col.placeCount > 0 ? col.placeCount : placesList.length,
-              places: placesList,
-            );
-          } catch (_) {
-            return col;
-          }
-        }).toList();
-
-        populatedCollections = await Future.wait(futures);
+        populatedCollections = collectionsRes.data!;
       }
 
       List<RegionDto> populatedRegions = [];
@@ -320,7 +343,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       debugPrint('[HomeScreen] _loadCollectionsAndRegionsLazy error: $e');
-      if (mounted) setState(() => _isLoadingCollections = false);
+      if (mounted) {
+        setState(() => _isLoadingCollections = false);
+      }
     }
   }
 
@@ -429,6 +454,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _navigateToPlaceDetail(PlaceModel place) async {
+    DeviceContextService().recordVisitedPlace(place);
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -842,15 +868,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 24),
 
-                    // 2.5. PERSONALIZED RECOMMENDATIONS (Matching Share_Locations PersonalizedRecommendationSection.tsx)
-                    if (displayRecommended.isNotEmpty) ...[
-                      PersonalizedRecommendationSection(
-                        places: displayRecommended,
-                        isPersonalized: _currentUser != null || _isPersonalizedRecommendations,
-                        onPlaceTap: _navigateToPlaceDetail,
-                      ),
-                      const SizedBox(height: 32),
-                    ],
+                    // 2.5. PERSONALIZED RECOMMENDATIONS (Dual-Context Kệ 1 GPS & Kệ 2 Điểm đến)
+                    PersonalizedRecommendationSection(
+                      dualFeed: _dualFeed,
+                      places: displayRecommended,
+                      isPersonalized: _currentUser != null || _isPersonalizedRecommendations,
+                      onPlaceTap: _navigateToPlaceDetail,
+                    ),
+                    const SizedBox(height: 32),
 
                     // 3. HOME FEATURED INTERLEAVED (Matching Share_Locations HomeFeaturedInterleaved.tsx)
                     _buildHomeFeaturedInterleaved(),
@@ -1447,6 +1472,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _submitHeroSearch() {
+    if (_selectedHeroCategory.isNotEmpty) {
+      final cat = _heroCategories.firstWhere(
+        (c) => c.name.toLowerCase() == _selectedHeroCategory.toLowerCase(),
+        orElse: () => const LookupItemDto(id: 0, name: ''),
+      );
+      if (cat.id > 0) {
+        DeviceContextService().recordCategoryInterest(cat.id, scoreToAdd: 3);
+      }
+    }
+
     _navigateToSearch(
       query: _heroSearchController.text.trim().isNotEmpty
           ? _heroSearchController.text.trim()

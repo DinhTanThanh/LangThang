@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/collection_model.dart';
 import '../../../data/services/travel_api_service.dart';
+import '../../../data/services/place_api_service.dart';
 import '../../widgets/tour_card.dart';
+import 'place_detail_screen.dart';
 
 class CollectionsScreen extends StatefulWidget {
   const CollectionsScreen({super.key});
@@ -34,6 +36,30 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _handleTourTap(TourModel tour) async {
+    final placeId = int.tryParse(tour.id);
+    if (placeId != null && placeId > 0) {
+      final res = await PlaceApiService().getPlaceDetail(placeId);
+      if (!mounted) return;
+      if (res.success && res.data != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PlaceDetailScreen(place: res.data!),
+          ),
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Khám phá: ${tour.title}'),
+        backgroundColor: AppColors.primary,
+      ),
+    );
   }
 
   @override
@@ -317,14 +343,7 @@ class _CollectionsScreenState extends State<CollectionsScreen> {
                         width: double.infinity,
                         child: TourCard(
                           tour: tour,
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Xem chi tiết: ${tour.title}'),
-                                backgroundColor: AppColors.primary,
-                              ),
-                            );
-                          },
+                          onTap: () => _handleTourTap(tour),
                         ),
                       );
                     },

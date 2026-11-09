@@ -53,6 +53,11 @@ class PlaceModel {
   final double latitude;
   final double longitude;
   final String? explainReason;
+  final double? distanceKm;
+  final double? matchPercentage;
+  final String? matchReason;
+  final int? categoryId;
+  final int? provinceId;
 
   const PlaceModel({
     required this.id,
@@ -83,6 +88,11 @@ class PlaceModel {
     this.latitude = 21.0285,
     this.longitude = 105.8542,
     this.explainReason,
+    this.distanceKm,
+    this.matchPercentage,
+    this.matchReason,
+    this.categoryId,
+    this.provinceId,
   });
 
   String get imageUrl => img;
@@ -118,6 +128,11 @@ class PlaceModel {
     double? latitude,
     double? longitude,
     String? explainReason,
+    double? distanceKm,
+    double? matchPercentage,
+    String? matchReason,
+    int? categoryId,
+    int? provinceId,
   }) {
     return PlaceModel(
       id: id ?? this.id,
@@ -148,6 +163,11 @@ class PlaceModel {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       explainReason: explainReason ?? this.explainReason,
+      distanceKm: distanceKm ?? this.distanceKm,
+      matchPercentage: matchPercentage ?? this.matchPercentage,
+      matchReason: matchReason ?? this.matchReason,
+      categoryId: categoryId ?? this.categoryId,
+      provinceId: provinceId ?? this.provinceId,
     );
   }
 
@@ -352,6 +372,14 @@ class PlaceModel {
       latitude: lat,
       longitude: lng,
       explainReason: explainReason,
+      distanceKm: (json['distanceKm'] as num?)?.toDouble(),
+      matchPercentage: (json['matchPercentage'] as num?)?.toDouble() ??
+          ((json['cosineSimilarity'] as num?) != null
+              ? ((json['cosineSimilarity'] as num).toDouble() * 100.0)
+              : null),
+      matchReason: json['matchReason']?.toString(),
+      categoryId: (json['categoryId'] as num?)?.toInt(),
+      provinceId: (json['provinceId'] as num?)?.toInt(),
     );
   }
 

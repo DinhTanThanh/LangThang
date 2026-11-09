@@ -202,6 +202,9 @@ class CollectionDto {
   final String? coverUrl;
   final int placeCount;
   final List<PlaceModel> places;
+  final String? matchReason;
+  final String? matchLabel;
+  final double? distanceKm;
 
   const CollectionDto({
     required this.id,
@@ -212,6 +215,9 @@ class CollectionDto {
     this.coverUrl,
     this.placeCount = 0,
     this.places = const [],
+    this.matchReason,
+    this.matchLabel,
+    this.distanceKm,
   });
 
   factory CollectionDto.fromJson(Map<String, dynamic> json) {
@@ -231,6 +237,9 @@ class CollectionDto {
       coverUrl: json['coverUrl']?.toString() ?? json['imageUrl']?.toString(),
       placeCount: (json['placeCount'] as num?)?.toInt() ?? (placesList.isNotEmpty ? placesList.length : 0),
       places: placesList,
+      matchReason: json['matchReason']?.toString(),
+      matchLabel: json['matchLabel']?.toString(),
+      distanceKm: (json['distanceKm'] as num?)?.toDouble(),
     );
   }
 
@@ -243,6 +252,9 @@ class CollectionDto {
     String? coverUrl,
     int? placeCount,
     List<PlaceModel>? places,
+    String? matchReason,
+    String? matchLabel,
+    double? distanceKm,
   }) {
     return CollectionDto(
       id: id ?? this.id,
@@ -253,6 +265,9 @@ class CollectionDto {
       coverUrl: coverUrl ?? this.coverUrl,
       placeCount: placeCount ?? this.placeCount,
       places: places ?? this.places,
+      matchReason: matchReason ?? this.matchReason,
+      matchLabel: matchLabel ?? this.matchLabel,
+      distanceKm: distanceKm ?? this.distanceKm,
     );
   }
 
