@@ -360,17 +360,22 @@ class ChatApiService {
         );
       }
 
-      if (fileList != null && fileList.isNotEmpty) {
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/chat/rooms/$roomId/messages/files');
-        final request = http.MultipartRequest('POST', uri);
-        request.headers['Authorization'] = 'Bearer $token';
-        request.fields['RoomId'] = '$roomId';
-        if (content != null && content.isNotEmpty) request.fields['Content'] = content;
-        if (replyToMessageId != null) request.fields['ReplyToMessageId'] = '$replyToMessageId';
-        if (placeId != null && placeId > 0) request.fields['PlaceId'] = '$placeId';
-        if (foodId != null && int.tryParse(foodId) != null) request.fields['FoodId'] = foodId;
-        if (tripId != null && tripId > 0) request.fields['TripId'] = '$tripId';
+      final hasFiles = fileList != null && fileList.isNotEmpty;
+      final uri = Uri.parse(hasFiles
+          ? '${ApiConstants.baseUrl}/api/chat/rooms/$roomId/messages/files'
+          : '${ApiConstants.baseUrl}/api/chat/rooms/$roomId/messages');
 
+      final request = http.MultipartRequest('POST', uri);
+      request.headers['Authorization'] = 'Bearer $token';
+      request.headers['Accept'] = 'application/json';
+      request.fields['RoomId'] = '$roomId';
+      if (content != null && content.isNotEmpty) request.fields['Content'] = content;
+      if (replyToMessageId != null) request.fields['ReplyToMessageId'] = '$replyToMessageId';
+      if (placeId != null && placeId > 0) request.fields['PlaceId'] = '$placeId';
+      if (foodId != null && int.tryParse(foodId) != null) request.fields['FoodId'] = foodId;
+      if (tripId != null && tripId > 0) request.fields['TripId'] = '$tripId';
+
+      if (hasFiles) {
         for (final file in fileList) {
           if (await file.exists()) {
             final fileNameOnly = file.path.split(Platform.pathSeparator).last;
@@ -382,44 +387,37 @@ class ChatApiService {
             ));
           }
         }
+      }
 
-        final streamed = await request.send().timeout(const Duration(seconds: 15));
-        final response = await http.Response.fromStream(streamed);
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          final json = _tryDecodeJson(response);
-          if (json != null) {
-            final data = json['data'] ?? json;
-            if (data is Map<String, dynamic>) {
-              final createdMsg = ChatMessage.fromJson(data, currentUserId: myId);
-              _messageStreamController.add(createdMsg);
-              return ApiResponse<ChatMessage>(
-                success: true,
-                message: 'Gửi tin nhắn thành công',
-                data: createdMsg,
-              );
-            }
+      final streamed = await request.send().timeout(const Duration(seconds: 15));
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final json = _tryDecodeJson(response);
+        if (json != null) {
+          final data = json['data'] ?? json;
+          if (data is Map<String, dynamic>) {
+            final createdMsg = ChatMessage.fromJson(data, currentUserId: myId);
+            _messageStreamController.add(createdMsg);
+            return ApiResponse<ChatMessage>(
+              success: true,
+              message: 'Gửi tin nhắn thành công',
+              data: createdMsg,
+            );
           }
         }
+      }
 
-        if (response.statusCode == 401) {
-          return const ApiResponse<ChatMessage>(
-            success: false,
-            message: 'UNAUTHORIZED: Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
-          );
-        }
-
-        final jsonErr = _tryDecodeJson(response);
-        final errMsg = (jsonErr?['message'] as String?) ??
-            (jsonErr?['title'] as String?) ??
-            (jsonErr?['error'] as String?) ??
-            'Không thể gửi tin nhắn lúc này (Mã lỗi: ${response.statusCode}).';
-
-        return ApiResponse<ChatMessage>(
+      if (response.statusCode == 401) {
+        return const ApiResponse<ChatMessage>(
           success: false,
-          message: errMsg,
+          message: 'UNAUTHORIZED: Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
         );
-      } else {
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/chat/rooms/$roomId/messages');
+      }
+
+      // If form-data returned 415 or 400, fallback to JSON
+      if (response.statusCode == 415 && !hasFiles) {
+        final jsonUri = Uri.parse('${ApiConstants.baseUrl}/api/chat/rooms/$roomId/messages');
         final reqBody = <String, dynamic>{'roomId': roomId};
         if (content != null && content.isNotEmpty) reqBody['content'] = content;
         if (replyToMessageId != null) reqBody['replyToMessageId'] = replyToMessageId;
@@ -427,8 +425,8 @@ class ChatApiService {
         if (foodId != null && int.tryParse(foodId) != null) reqBody['foodId'] = int.parse(foodId);
         if (tripId != null && tripId > 0) reqBody['tripId'] = tripId;
 
-        final res = await http.post(
-          uri,
+        final resJson = await http.post(
+          jsonUri,
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -437,15 +435,8 @@ class ChatApiService {
           body: jsonEncode(reqBody),
         ).timeout(const Duration(seconds: 8));
 
-        if (res.statusCode == 401) {
-          return const ApiResponse<ChatMessage>(
-            success: false,
-            message: 'UNAUTHORIZED: Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
-          );
-        }
-
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final json = _tryDecodeJson(res);
+        if (resJson.statusCode >= 200 && resJson.statusCode < 300) {
+          final json = _tryDecodeJson(resJson);
           if (json != null) {
             final data = json['data'] ?? json;
             if (data is Map<String, dynamic>) {
@@ -459,18 +450,18 @@ class ChatApiService {
             }
           }
         }
-
-        final jsonErr = _tryDecodeJson(res);
-        final errMsg = (jsonErr?['message'] as String?) ??
-            (jsonErr?['title'] as String?) ??
-            (jsonErr?['error'] as String?) ??
-            'Không thể gửi tin nhắn lúc này (Mã lỗi: ${res.statusCode}).';
-
-        return ApiResponse<ChatMessage>(
-          success: false,
-          message: errMsg,
-        );
       }
+
+      final jsonErr = _tryDecodeJson(response);
+      final errMsg = (jsonErr?['message'] as String?) ??
+          (jsonErr?['title'] as String?) ??
+          (jsonErr?['error'] as String?) ??
+          'Không thể gửi tin nhắn lúc này (Mã lỗi: ${response.statusCode}).';
+
+      return ApiResponse<ChatMessage>(
+        success: false,
+        message: errMsg,
+      );
     } catch (e) {
       debugPrint('[ChatApiService] sendMessage error: $e');
       return ApiResponse<ChatMessage>(

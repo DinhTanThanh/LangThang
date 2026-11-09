@@ -188,9 +188,27 @@ class PlaceApiService {
   }
 
   /// GET /api/collections/featured
-  Future<ApiResponse<List<CollectionDto>>> getFeaturedCollections({int count = 6}) async {
+  /// Lấy danh sách bộ sưu tập được chấm điểm cá nhân hóa theo GPS, Điểm đến chuyến đi và Gu danh mục
+  Future<ApiResponse<List<CollectionDto>>> getFeaturedCollections({
+    int count = 6,
+    double? lat,
+    double? lng,
+    List<int>? intentProvinceIds,
+    List<int>? topCategoryIds,
+  }) async {
     try {
-      final url = Uri.parse('${ApiConstants.baseUrl}${ApiConstants.featuredCollections}?count=$count');
+      final queryParams = <String, String>{
+        'count': count.toString(),
+        if (lat != null) 'lat': lat.toString(),
+        if (lng != null) 'lng': lng.toString(),
+        if (intentProvinceIds != null && intentProvinceIds.isNotEmpty)
+          'intentProvinceIds': intentProvinceIds.join(','),
+        if (topCategoryIds != null && topCategoryIds.isNotEmpty)
+          'topCategoryIds': topCategoryIds.join(','),
+      };
+
+      final url = Uri.parse('${ApiConstants.baseUrl}${ApiConstants.featuredCollections}')
+          .replace(queryParameters: queryParams);
       final response = await http
           .get(url, headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 8));

@@ -8,6 +8,7 @@ import '../../../data/services/favorite_api_service.dart';
 import '../../../data/services/user_profile_api_service.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/recent_history_service.dart';
+import '../../../data/services/device_context_service.dart';
 import '../../widgets/mapbox_interactive_map.dart';
 import '../../widgets/review/place_detail_reviews_section.dart';
 import '../../widgets/report/report_modal_sheet.dart';
@@ -73,6 +74,7 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
     _fetchRelatedPlaces();
     _fetchReviews();
     RecentHistoryService().recordAccessHistory(widget.place);
+    DeviceContextService().recordVisitedPlace(widget.place);
   }
 
   Future<void> _checkInitialVisited() async {

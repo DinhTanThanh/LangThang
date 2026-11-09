@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/place_model.dart';
 import '../../../data/models/place_filter_dto.dart';
 import '../../../data/services/place_api_service.dart';
+import '../../../data/services/device_context_service.dart';
 import '../../widgets/place_card_grid.dart';
 import '../../widgets/place_card_list.dart';
 import '../../widgets/filter_bottom_sheet.dart';
@@ -345,6 +346,33 @@ class DestinationsScreenState extends State<DestinationsScreen> {
               _filterCriteria = newCriteria;
               _currentPage = 1;
             });
+
+            // Ghi nhận tín hiệu ngữ cảnh tìm kiếm vào DeviceContextService
+            if (newCriteria.categoryId != null && newCriteria.categoryId! > 0) {
+              DeviceContextService().recordCategoryInterest(newCriteria.categoryId!, scoreToAdd: 3);
+            }
+            if (newCriteria.provinceIds.isNotEmpty) {
+              for (final pid in newCriteria.provinceIds) {
+                LookupItemDto? foundProv;
+                for (final reg in _filterOptions?.regions ?? <RegionLookupDto>[]) {
+                  for (final prov in reg.provinces) {
+                    if (prov.id == pid) {
+                      foundProv = prov;
+                      break;
+                    }
+                  }
+                  if (foundProv != null) break;
+                }
+                if (foundProv != null && foundProv.id > 0) {
+                  DeviceContextService().recordSearchIntent(
+                    provinceId: foundProv.id,
+                    provinceName: foundProv.name,
+                    scoreToAdd: 3,
+                  );
+                }
+              }
+            }
+
             _fetchPlaces();
           },
         );

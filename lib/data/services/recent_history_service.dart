@@ -45,12 +45,8 @@ class RecentHistoryService {
           'Authorization': 'Bearer $token',
         };
 
-        final uri1 = Uri.parse('${ApiConstants.baseUrl}/api/v1/places/${place.id}/access-history');
-        final res = await http.post(uri1, headers: headers).timeout(const Duration(seconds: 3));
-        if (res.statusCode == 404) {
-          final uri2 = Uri.parse('${ApiConstants.baseUrl}/api/places/${place.id}/access-history');
-          await http.post(uri2, headers: headers).timeout(const Duration(seconds: 3));
-        }
+        final uri = Uri.parse('${ApiConstants.baseUrl}/api/places/${place.id}/access-history');
+        await http.post(uri, headers: headers, body: jsonEncode({})).timeout(const Duration(seconds: 3));
       }
     } catch (e) {
       debugPrint('[RecentHistoryService] recordAccessHistory error: $e');
@@ -69,7 +65,7 @@ class RecentHistoryService {
           'Authorization': 'Bearer $token',
         };
 
-        final uri = Uri.parse('${ApiConstants.baseUrl}/api/v1/users/me/access-histories?limit=$limit');
+        final uri = Uri.parse('${ApiConstants.baseUrl}/api/users/me/access-histories?limit=$limit');
         final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 3));
 
         if (res.statusCode >= 200 && res.statusCode < 300) {

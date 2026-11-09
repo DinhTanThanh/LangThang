@@ -36,6 +36,7 @@ class _ChatInboxScreenState extends State<ChatInboxScreen> {
 
   StreamSubscription<ChatMessage>? _msgSub;
   StreamSubscription<int>? _unreadSub;
+  Timer? _inboxTimer;
 
   @override
   void initState() {
@@ -45,10 +46,17 @@ class _ChatInboxScreenState extends State<ChatInboxScreen> {
     // Listen to real-time events to keep inbox updated
     _msgSub = _chatService.onMessageReceived.listen((_) => _loadInbox(silent: true));
     _unreadSub = _chatService.onTotalUnreadCountChanged.listen((_) => _loadInbox(silent: true));
+
+    _inboxTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted && _isLoggedIn && !_isLoading) {
+        _loadInbox(silent: true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _inboxTimer?.cancel();
     _msgSub?.cancel();
     _unreadSub?.cancel();
     _searchController.dispose();
@@ -187,6 +195,14 @@ class _ChatInboxScreenState extends State<ChatInboxScreen> {
                   ),
                 );
               }
+            } else if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(res.message.isNotEmpty ? res.message : 'Không thể mở phòng trò chuyện.'),
+                  backgroundColor: const Color(0xFFDC2626),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
             }
           },
         );

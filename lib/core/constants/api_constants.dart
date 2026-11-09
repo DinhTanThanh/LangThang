@@ -41,6 +41,7 @@ class ApiConstants {
   static String similarPlaces(int placeId) => '/api/recommendations/places/$placeId/similar';
   static String relatedPlaces(int placeId) => '/api/places/$placeId/related';
   static const String personalizedPlaces = '/api/recommendations/places/for-you';
+  static const String homeFeed = '/api/recommendations/home-feed';
   static const String recommendedFoods = '/api/recommendations/foods/for-you';
   static String tripSuggestions(int tripId) => '/api/recommendations/trips/$tripId/suggested-places';
 
